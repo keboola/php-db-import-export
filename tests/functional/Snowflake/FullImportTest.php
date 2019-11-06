@@ -50,7 +50,6 @@ class FullImportTest extends SnowflakeImportExportBaseTest
 
         // full imports
         $tests[] = [
-
             $this->createABSSourceInstance('sliced/2cols-large/2cols-large.csvmanifest', true),
             new Storage\Snowflake\Table(self::SNOWFLAKE_DEST_SCHEMA_NAME, 'out.csv_2Cols'),
             $this->getSimpleImportOptions($escapingHeader, ImportOptions::SKIP_NO_LINE),
