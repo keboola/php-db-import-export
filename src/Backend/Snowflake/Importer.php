@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Backend\Snowflake;
 
-use Keboola\Db\Import\Exception;
-use Keboola\Db\Import\Result;
-use Keboola\Db\Import\Snowflake\Connection;
+use Keboola\Db\ImportExport\Backend\Exception\ColumnsCountNotMatchException;
+use Keboola\Db\ImportExport\Backend\Exception\InvalidSourceDataException;
+use Keboola\Db\ImportExport\Backend\Exception\MandatoryFileNotFoundException;
+use Keboola\Db\ImportExport\Backend\Exception\NoColumnsFoundException;
 use Keboola\Db\ImportExport\Backend\ImporterInterface;
+use Keboola\Db\ImportExport\Backend\ImportResult;
 use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\BackendHelper;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage;
+use Keboola\SnowflakeDbAdapter\Connection;
 
 class Importer implements ImporterInterface
 {
@@ -41,7 +44,7 @@ class Importer implements ImporterInterface
         Storage\SourceInterface $source,
         Storage\DestinationInterface $destination,
         ImportOptions $options
-    ): Result {
+    ): ImportResult {
         if (!$destination instanceof Storage\Snowflake\Table) {
             throw new \Exception(sprintf(
                 'Destination "%s" is invalid only "%s" is supported.',
@@ -85,9 +88,8 @@ class Importer implements ImporterInterface
         Storage\Snowflake\Table $destination
     ): void {
         if (count($importOptions->getColumns()) === 0) {
-            throw new Exception(
-                'No columns found in CSV file.',
-                Exception::NO_COLUMNS
+            throw new NoColumnsFoundException(
+                'No columns found in CSV file.'
             );
         }
 
@@ -98,9 +100,8 @@ class Importer implements ImporterInterface
 
         $moreColumns = array_diff($importOptions->getColumns(), $tableColumns);
         if (!empty($moreColumns)) {
-            throw new Exception(
-                'Columns doest not match. Non existing columns: ' . implode(', ', $moreColumns),
-                Exception::COLUMNS_COUNT_NOT_MATCH
+            throw new ColumnsCountNotMatchException(
+                'Columns doest not match. Non existing columns: ' . implode(', ', $moreColumns)
             );
         }
     }
@@ -142,11 +143,11 @@ class Importer implements ImporterInterface
                 )
             );
         } catch (\Throwable $e) {
-            $stringCode = Exception::INVALID_SOURCE_DATA;
+            $message = 'Load error: ' . $e->getMessage();
             if (strpos($e->getMessage(), 'was not found') !== false) {
-                $stringCode = Exception::MANDATORY_FILE_NOT_FOUND;
+                throw new MandatoryFileNotFoundException($message, 0, $e);
             }
-            throw new Exception('Load error: ' . $e->getMessage(), $stringCode, $e);
+            throw new InvalidSourceDataException($message, 0, $e);
         }
     }
 

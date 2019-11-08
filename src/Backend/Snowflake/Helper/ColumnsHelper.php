@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Backend\Snowflake\Helper;
 
-use Keboola\Db\ImportExport\Backend\Snowflake\Helper\QuoteHelper;
+use Keboola\SnowflakeDbAdapter\QueryBuilder;
 
 final class ColumnsHelper
 {
@@ -17,7 +17,7 @@ final class ColumnsHelper
             $tableAlias
         ) {
             $alias = $tableAlias === null ? '' : $tableAlias . '.';
-            return $alias . QuoteHelper::quoteIdentifier($columns);
+            return $alias . QueryBuilder::quoteIdentifier($columns);
         }, $columns));
     }
 }

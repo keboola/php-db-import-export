@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportUnit\Storage\Snowflake;
 
-use Keboola\Db\Import\Snowflake\Connection;
 use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage\Snowflake\SnowflakeImportAdapter;
 use Keboola\Db\ImportExport\Storage;
+use Keboola\SnowflakeDbAdapter\Connection;
 use PHPUnit\Framework\MockObject\MockObject;
 use Tests\Keboola\Db\ImportExportUnit\BaseTestCase;
 

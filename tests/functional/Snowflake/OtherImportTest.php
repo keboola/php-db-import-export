@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportFunctional\Snowflake;
 
-use Keboola\Csv\CsvFile;
-use Keboola\Db\Import\Exception;
+use Keboola\Csv\CsvReader;
+use Keboola\Db\ImportExport\Backend\Exception\ColumnsCountNotMatchException;
+use Keboola\Db\ImportExport\Backend\Exception\MandatoryFileNotFoundException;
 use Keboola\Db\ImportExport\Backend\Snowflake\Importer;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage;
@@ -18,8 +19,8 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
         $source = new Storage\Snowflake\Table(self::SNOWFLAKE_SOURCE_SCHEMA_NAME, 'names');
         $destination = new Storage\Snowflake\Table(self::SNOWFLAKE_DEST_SCHEMA_NAME, 'out.csv_2Cols');
 
-        self::expectException(Exception::class);
-        self::expectExceptionCode(Exception::COLUMNS_COUNT_NOT_MATCH);
+        self::expectException(ColumnsCountNotMatchException::class);
+        self::expectExceptionMessage('Columns doest not match. Non existing columns: c1, c2');
         (new Importer($this->connection))->importTable(
             $source,
             $destination,
@@ -46,13 +47,13 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
 
     public function testInvalidManifestImport(): void
     {
-        $initialFile = new CsvFile(self::DATA_DIR . 'tw_accounts.csv');
+        $initialFile = new CsvReader(self::DATA_DIR . 'tw_accounts.csv');
         $options = $this->getSimpleImportOptions($initialFile->getHeader());
         $source = $this->createABSSourceInstance('02_tw_accounts.csv.invalid.manifest', true);
         $destination = new Storage\Snowflake\Table(self::SNOWFLAKE_DEST_SCHEMA_NAME, 'accounts-3');
 
-        self::expectException(Exception::class);
-        self::expectExceptionCode(Exception::MANDATORY_FILE_NOT_FOUND);
+        self::expectException(MandatoryFileNotFoundException::class);
+        self::expectExceptionMessage('Load error: Error "odbc_execute(): SQL error: Remote file');
         (new Importer($this->connection))->importTable(
             $source,
             $destination,
@@ -69,10 +70,8 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
         $source = $this->createABSSourceInstance('tw_accounts.csv', false);
         $destination = new Storage\Snowflake\Table(self::SNOWFLAKE_DEST_SCHEMA_NAME, 'out.csv_2Cols');
 
-        self::expectException(Exception::class);
-        self::expectExceptionCode(Exception::COLUMNS_COUNT_NOT_MATCH);
-        self::expectExceptionMessage('first');
-        self::expectExceptionMessage('second');
+        self::expectException(ColumnsCountNotMatchException::class);
+        self::expectExceptionMessage('Columns doest not match. Non existing columns: first, second');
         (new Importer($this->connection))->importTable(
             $source,
             $destination,

@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\Snowflake;
 
-use Keboola\Db\Import\Snowflake\Connection;
 use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\QuoteHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportAdapterInterface;
 use Keboola\Db\ImportExport\Storage\DestinationInterface;
 use Keboola\Db\ImportExport\Storage\SourceInterface;
+use Keboola\SnowflakeDbAdapter\Connection;
+use Keboola\SnowflakeDbAdapter\QueryBuilder;
 
 class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
 {
@@ -41,8 +42,8 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
         $connection->query($commands[0]);
         $rows = $connection->fetchAll(sprintf(
             'SELECT COUNT(*) AS "count" FROM %s.%s',
-            QuoteHelper::quoteIdentifier($destination->getSchema()),
-            QuoteHelper::quoteIdentifier($importState->getStagingTableName())
+            QueryBuilder::quoteIdentifier($destination->getSchema()),
+            QueryBuilder::quoteIdentifier($importState->getStagingTableName())
         ));
         $importState->stopTimer('copyToStaging');
         return (int) $rows[0]['count'];
@@ -57,21 +58,21 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
         string $stagingTableName
     ): array {
         $quotedColumns = array_map(function ($column) {
-            return QuoteHelper::quoteIdentifier($column);
+            return QueryBuilder::quoteIdentifier($column);
         }, $importOptions->getColumns());
 
         $sql = sprintf(
             'INSERT INTO %s.%s (%s)',
-            QuoteHelper::quoteIdentifier($destination->getSchema()),
-            QuoteHelper::quoteIdentifier($stagingTableName),
+            QueryBuilder::quoteIdentifier($destination->getSchema()),
+            QueryBuilder::quoteIdentifier($stagingTableName),
             implode(', ', $quotedColumns)
         );
 
         $sql .= sprintf(
             ' SELECT %s FROM %s.%s',
             implode(', ', $quotedColumns),
-            QuoteHelper::quoteIdentifier($this->source->getSchema()),
-            QuoteHelper::quoteIdentifier($this->source->getTableName()),
+            QueryBuilder::quoteIdentifier($this->source->getSchema()),
+            QueryBuilder::quoteIdentifier($this->source->getTableName()),
         );
 
         return [$sql];

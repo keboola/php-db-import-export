@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportFunctional\Snowflake;
 
-use Keboola\Csv\CsvFile;
-use Keboola\Db\Import\Snowflake\Connection;
+use Keboola\Csv\CsvReader;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage\Snowflake\Table;
+use Keboola\SnowflakeDbAdapter\Connection;
 use Tests\Keboola\Db\ImportExport\ABSSourceTrait;
 use Tests\Keboola\Db\ImportExportFunctional\ImportExportBaseTest;
 
@@ -106,7 +106,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
         $filesHeader = [];
 
         foreach ($files as $file) {
-            $csvFile = new CsvFile($file);
+            $csvFile = new CsvReader($file);
             $csvFileRows = [];
             foreach ($csvFile as $row) {
                 $csvFileRows[] = $row;

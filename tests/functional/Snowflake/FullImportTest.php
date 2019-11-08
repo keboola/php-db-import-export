@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportFunctional\Snowflake;
 
-use Keboola\Csv\CsvFile;
+use Keboola\Csv\CsvOptions;
+use Keboola\Csv\CsvReader;
 use Keboola\Db\ImportExport\Backend\Snowflake\Importer;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage;
@@ -14,7 +15,7 @@ class FullImportTest extends SnowflakeImportExportBaseTest
     public function fullImportData(): array
     {
         $expectedEscaping = [];
-        $file = new CsvFile(self::DATA_DIR . 'escaping/standard-with-enclosures.csv');
+        $file = new CsvReader(self::DATA_DIR . 'escaping/standard-with-enclosures.csv');
         foreach ($file as $row) {
             $expectedEscaping[] = $row;
         }
@@ -22,17 +23,17 @@ class FullImportTest extends SnowflakeImportExportBaseTest
         $expectedEscaping = array_values($expectedEscaping);
 
         $expectedAccounts = [];
-        $file = new CsvFile(self::DATA_DIR . 'tw_accounts.csv');
+        $file = new CsvReader(self::DATA_DIR . 'tw_accounts.csv');
         foreach ($file as $row) {
             $expectedAccounts[] = $row;
         }
         $accountsHeader = array_shift($expectedAccounts); // remove header
         $expectedAccounts = array_values($expectedAccounts);
 
-        $file = new CsvFile(self::DATA_DIR . 'tw_accounts.changedColumnsOrder.csv');
+        $file = new CsvReader(self::DATA_DIR . 'tw_accounts.changedColumnsOrder.csv');
         $accountChangedColumnsOrderHeader = $file->getHeader();
 
-        $file = new CsvFile(self::DATA_DIR . 'lemma.csv');
+        $file = new CsvReader(self::DATA_DIR . 'lemma.csv');
         $expectedLemma = [];
         foreach ($file as $row) {
             $expectedLemma[] = $row;
@@ -86,7 +87,8 @@ class FullImportTest extends SnowflakeImportExportBaseTest
 
         $tests[] = [
             $this->createABSSourceInstanceFromCsv(
-                new CsvFile('standard-with-enclosures.tabs.csv', "\t")
+                'standard-with-enclosures.tabs.csv',
+                new CsvOptions("\t")
             ),
             new Storage\Snowflake\Table(self::SNOWFLAKE_DEST_SCHEMA_NAME, 'out.csv_2Cols'),
             $this->getSimpleImportOptions($escapingHeader),
@@ -94,7 +96,7 @@ class FullImportTest extends SnowflakeImportExportBaseTest
         ];
 
         $tests[] = [
-            $this->createABSSourceInstanceFromCsv(new CsvFile('raw.rs.csv', "\t", '', '\\')),
+            $this->createABSSourceInstanceFromCsv('raw.rs.csv', new CsvOptions("\t", '', '\\')),
             new Storage\Snowflake\Table(self::SNOWFLAKE_DEST_SCHEMA_NAME, 'out.csv_2Cols'),
             $this->getSimpleImportOptions($escapingHeader),
             $expectedEscaping,

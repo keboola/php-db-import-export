@@ -4,22 +4,22 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportUnit\Backend\Snowflake;
 
-use Keboola\Db\ImportExport\Backend\ExporterInterface;
-use Keboola\Db\ImportExport\Backend\Snowflake\Exporter as SnowflakeExporter;
+use Keboola\Db\ImportExport\Backend\ImporterInterface;
+use Keboola\Db\ImportExport\Backend\Snowflake\Importer as SnowflakeImporter;
 use Keboola\SnowflakeDbAdapter\Connection;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 /**
- * exporter is covered by functional tests
+ * importer is covered by functional tests
  */
-class ExporterTest extends TestCase
+class ImporterTest extends TestCase
 {
     public function test(): void
     {
         /** @var Connection|MockObject $connection */
         $connection = self::createMock(Connection::class);
-        $exporter= new SnowflakeExporter($connection);
-        self::assertInstanceOf(ExporterInterface::class, $exporter);
+        $importer = new SnowflakeImporter($connection);
+        self::assertInstanceOf(ImporterInterface::class, $importer);
     }
 }

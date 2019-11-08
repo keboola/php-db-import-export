@@ -13,6 +13,7 @@ use Keboola\Db\ImportExport\Backend\Snowflake\Importer as SnowflakeImporter;
 use Keboola\Db\ImportExport\Storage\DestinationInterface;
 use Keboola\Db\ImportExport\Storage\NoBackendAdapterException;
 use Keboola\Db\ImportExport\Storage\SourceInterface;
+use Keboola\SnowflakeDbAdapter\QueryBuilder;
 
 class Table implements SourceInterface, DestinationInterface
 {
@@ -53,8 +54,8 @@ class Table implements SourceInterface, DestinationInterface
     {
         return sprintf(
             '%s.%s',
-            QuoteHelper::quoteIdentifier($this->schema),
-            QuoteHelper::quoteIdentifier($this->tableName),
+            QueryBuilder::quoteIdentifier($this->schema),
+            QueryBuilder::quoteIdentifier($this->tableName),
         );
     }
 

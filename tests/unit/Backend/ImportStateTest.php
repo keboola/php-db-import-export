@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportUnit\Backend;
 
-use Keboola\Db\Import\Result;
+use Keboola\Db\ImportExport\Backend\ImportResult;
 use Keboola\Db\ImportExport\Backend\ImportState;
 use PHPUnit\Framework\TestCase;
 
@@ -26,7 +26,7 @@ class ImportStateTest extends TestCase
         $state->setImportedColumns(['col1', 'col2']);
 
         $result = $state->getResult();
-        self::assertInstanceOf(Result::class, $result);
+        self::assertInstanceOf(ImportResult::class, $result);
         self::assertEquals(10, $result->getImportedRowsCount());
         self::assertSame(['col1', 'col2'], $result->getImportedColumns());
         self::assertCount(2, $result->getTimers());

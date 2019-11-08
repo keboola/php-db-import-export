@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Backend;
 
-use Keboola\Db\Import\Result;
-use Tracy\Debugger;
+use Symfony\Component\Stopwatch\Stopwatch;
 
 class ImportState
 {
@@ -24,9 +23,15 @@ class ImportState
     /** @var string */
     private $stagingTableName = '';
 
+    /**
+     * @var Stopwatch
+     */
+    private $stopwatch;
+
     public function __construct(string $stagingTableName)
     {
         $this->stagingTableName = $stagingTableName;
+        $this->stopwatch = new Stopwatch();
     }
 
     public function addImportedRowsCount(int $count): void
@@ -34,9 +39,9 @@ class ImportState
         $this->importedRowsCount += $count;
     }
 
-    public function getResult(): Result
+    public function getResult(): ImportResult
     {
-        return new Result([
+        return new ImportResult([
             'warnings' => $this->warnings,
             'timers' => array_values($this->timers), // convert to indexed array
             'importedRowsCount' => $this->importedRowsCount,
@@ -56,7 +61,7 @@ class ImportState
 
     public function startTimer(string $timerName): void
     {
-        Debugger::timer($timerName);
+        $this->stopwatch->start($timerName);
         $this->timers[$timerName] = [
             'name' => $timerName,
             'durationSeconds' => null,
@@ -65,6 +70,7 @@ class ImportState
 
     public function stopTimer(string $timerName): void
     {
-        $this->timers[$timerName]['durationSeconds'] = Debugger::timer($timerName);
+        $miliseconds = $this->stopwatch->stop($timerName)->getDuration();
+        $this->timers[$timerName]['durationSeconds'] = $miliseconds / 1000;
     }
 }

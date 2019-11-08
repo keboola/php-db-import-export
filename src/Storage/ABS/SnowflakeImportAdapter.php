@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\ABS;
 
-use Keboola\Csv\CsvFile;
-use Keboola\Db\Import\Snowflake\Connection;
+use Keboola\Csv\CsvOptions;
 use Keboola\Db\ImportExport\Backend\ImporterInterface;
 use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\ImportOptions;
-use Keboola\Db\ImportExport\Backend\Snowflake\Helper\QuoteHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportAdapterInterface;
 use Keboola\Db\ImportExport\Storage\DestinationInterface;
 use Keboola\Db\ImportExport\Storage\Snowflake\Table;
 use Keboola\Db\ImportExport\Storage\SourceInterface;
+use Keboola\SnowflakeDbAdapter\Connection;
+use Keboola\SnowflakeDbAdapter\QueryBuilder;
 
 class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
 {
@@ -41,7 +41,7 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
         ImportOptions $importOptions,
         ImportState $importState
     ): int {
-        $timerName = sprintf('copyToStaging-%s', $this->source->getCsvFile()->getBasename());
+        $timerName = sprintf('copyToStaging-%s', $this->source->getFilePath());
         $importState->startTimer($timerName);
         $rowsCount = 0;
         foreach ($commands as $command) {
@@ -72,16 +72,16 @@ FROM %s
 CREDENTIALS=(AZURE_SAS_TOKEN=\'%s\')
 FILE_FORMAT = (TYPE=CSV %s)
 FILES = (%s)',
-                QuoteHelper::quoteIdentifier($destination->getSchema()),
-                QuoteHelper::quoteIdentifier($stagingTableName),
-                QuoteHelper::quote($this->source->getContainerUrl()),
+                QueryBuilder::quoteIdentifier($destination->getSchema()),
+                QueryBuilder::quoteIdentifier($stagingTableName),
+                QueryBuilder::quote($this->source->getContainerUrl()),
                 $this->source->getSasToken(),
-                implode(' ', $this->getCsvCopyCommandOptions($importOptions, $this->source->getCsvFile())),
+                implode(' ', $this->getCsvCopyCommandOptions($importOptions, $this->source->getCsvOptions())),
                 implode(
                     ', ',
                     array_map(
                         function ($entry) {
-                            return QuoteHelper::quote(strtr($entry, [$this->source->getContainerUrl() => '']));
+                            return QueryBuilder::quote(strtr($entry, [$this->source->getContainerUrl() => '']));
                         },
                         $entries
                     )
@@ -93,21 +93,21 @@ FILES = (%s)',
 
     private function getCsvCopyCommandOptions(
         ImportOptions $importOptions,
-        CsvFile $csvFile
+        CsvOptions $csvOptions
     ): array {
         $options = [
-            sprintf('FIELD_DELIMITER = %s', QuoteHelper::quote($csvFile->getDelimiter())),
+            sprintf('FIELD_DELIMITER = %s', QueryBuilder::quote($csvOptions->getDelimiter())),
         ];
 
         if ($importOptions->getNumberOfIgnoredLines() > 0) {
             $options[] = sprintf('SKIP_HEADER = %d', $importOptions->getNumberOfIgnoredLines());
         }
 
-        if ($csvFile->getEnclosure()) {
-            $options[] = sprintf('FIELD_OPTIONALLY_ENCLOSED_BY = %s', QuoteHelper::quote($csvFile->getEnclosure()));
+        if ($csvOptions->getEnclosure()) {
+            $options[] = sprintf('FIELD_OPTIONALLY_ENCLOSED_BY = %s', QueryBuilder::quote($csvOptions->getEnclosure()));
             $options[] = 'ESCAPE_UNENCLOSED_FIELD = NONE';
-        } elseif ($csvFile->getEscapedBy()) {
-            $options[] = sprintf('ESCAPE_UNENCLOSED_FIELD = %s', QuoteHelper::quote($csvFile->getEscapedBy()));
+        } elseif ($csvOptions->getEscapedBy()) {
+            $options[] = sprintf('ESCAPE_UNENCLOSED_FIELD = %s', QueryBuilder::quote($csvOptions->getEscapedBy()));
         }
         return $options;
     }

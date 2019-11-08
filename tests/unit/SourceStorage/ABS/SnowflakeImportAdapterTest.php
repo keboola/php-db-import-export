@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportUnit\Storage\ABS;
 
-use Keboola\Csv\CsvFile;
-use Keboola\Db\Import\Snowflake\Connection;
+use Keboola\Csv\CsvOptions;
 use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage\ABS\SnowflakeImportAdapter;
 use Keboola\Db\ImportExport\Storage;
+use Keboola\SnowflakeDbAdapter\Connection;
 use PHPUnit\Framework\MockObject\MockObject;
 use Tests\Keboola\Db\ImportExportUnit\BaseTestCase;
 
@@ -19,7 +19,7 @@ class SnowflakeImportAdapterTest extends BaseTestCase
     {
         /** @var Storage\ABS\SourceFile|MockObject $source */
         $source = self::createMock(Storage\ABS\SourceFile::class);
-        $source->expects(self::once())->method('getCsvFile')->willReturn(new CsvFile(self::DATA_DIR . 'empty.csv'));
+        $source->expects(self::once())->method('getFilePath')->willReturn('file.csv');
         /** @var Connection|MockObject $connection */
         $connection = self::createMock(Connection::class);
         $connection->expects(self::exactly(2))->method('fetchAll')->willReturn([['rows_loaded' => 1]]);
@@ -46,7 +46,7 @@ class SnowflakeImportAdapterTest extends BaseTestCase
     {
         /** @var Storage\ABS\SourceFile|MockObject $source */
         $source = self::createMock(Storage\ABS\SourceFile::class);
-        $source->expects(self::once())->method('getCsvFile')->willReturn(new CsvFile(self::DATA_DIR . 'empty.csv'));
+        $source->expects(self::once())->method('getCsvOptions')->willReturn(new CsvOptions());
         $source->expects(self::once())->method('getManifestEntries')->willReturn(['azure://url']);
         $source->expects(self::exactly(2))->method('getContainerUrl')->willReturn('containerUrl');
         $source->expects(self::once())->method('getSasToken')->willReturn('sasToken');
@@ -81,7 +81,7 @@ EOT,
 
         /** @var Storage\ABS\SourceFile|MockObject $source */
         $source = self::createMock(Storage\ABS\SourceFile::class);
-        $source->expects(self::exactly(2))->method('getCsvFile')->willReturn(new CsvFile(self::DATA_DIR . 'empty.csv'));
+        $source->expects(self::exactly(2))->method('getCsvOptions')->willReturn(new CsvOptions());
         $source->expects(self::exactly(1))->method('getManifestEntries')->willReturn($files);
         $source->expects(self::exactly(1502/*Called for each entry plus 2times*/))
             ->method('getContainerUrl')->willReturn('containerUrl');
