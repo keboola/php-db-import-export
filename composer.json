@@ -9,7 +9,7 @@
     ],
     "require": {
         "php": "^7.3",
-        "keboola/csv": "dev-zajca-csv-options",
+        "keboola/csv": "^2.1.0",
         "keboola/db-adapter-snowflake": "dev-tf-init-db-snowflake",
         "keboola/php-component": "^7.0.1",
         "microsoft/azure-storage-blob": "^1.4",
