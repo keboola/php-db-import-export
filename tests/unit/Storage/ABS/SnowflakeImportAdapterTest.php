@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportUnit\Storage\ABS;
 
+use Generator;
 use Keboola\Csv\CsvOptions;
 use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\ImportOptions;
@@ -30,9 +31,14 @@ class SnowflakeImportAdapterTest extends BaseTestCase
         /** @var ImportOptions|MockObject $options */
         $options = self::createMock(ImportOptions::class);
 
+        $generator = function (): Generator {
+            yield 'cmd1';
+            yield 'cmd2';
+        };
+
         $adapter = new SnowflakeImportAdapter($source);
         $rows = $adapter->executeCopyCommands(
-            ['cmd1', 'cmd2'],
+            $generator(),
             $connection,
             new Storage\Snowflake\Table('', ''),
             $options,
@@ -60,7 +66,7 @@ class SnowflakeImportAdapterTest extends BaseTestCase
             'stagingTable'
         );
 
-        self::assertSame([
+        self::assertSame(
             <<<EOT
 COPY INTO "schema"."stagingTable" 
 FROM 'containerUrl'
@@ -68,8 +74,8 @@ CREDENTIALS=(AZURE_SAS_TOKEN='sasToken')
 FILE_FORMAT = (TYPE=CSV FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '\"' ESCAPE_UNENCLOSED_FIELD = NONE)
 FILES = ('azure://url')
 EOT,
-
-        ], $commands);
+            $commands->current()
+        );
     }
 
     public function testGetCopyCommandsChunk(): void
@@ -105,7 +111,7 @@ EOT,
             return sprintf("'%s'", $file);
         }, $cmd2Files));
 
-        self::assertSame([
+        self::assertSame(
             <<<EOT
 COPY INTO "schema"."stagingTable" 
 FROM 'containerUrl'
@@ -113,6 +119,12 @@ CREDENTIALS=(AZURE_SAS_TOKEN='sasToken')
 FILE_FORMAT = (TYPE=CSV FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '\"' ESCAPE_UNENCLOSED_FIELD = NONE)
 FILES = ($cmd1Files)
 EOT,
+            $commands->current()
+        );
+
+        $commands->next();
+
+        self::assertSame(
             <<<EOT
 COPY INTO "schema"."stagingTable" 
 FROM 'containerUrl'
@@ -120,6 +132,7 @@ CREDENTIALS=(AZURE_SAS_TOKEN='sasToken')
 FILE_FORMAT = (TYPE=CSV FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '\"' ESCAPE_UNENCLOSED_FIELD = NONE)
 FILES = ($cmd2Files)
 EOT,
-        ], $commands);
+            $commands->current()
+        );
     }
 }

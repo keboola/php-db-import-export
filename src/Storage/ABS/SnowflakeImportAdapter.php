@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\ABS;
 
+use Generator;
 use Keboola\Csv\CsvOptions;
 use Keboola\Db\ImportExport\Backend\ImporterInterface;
 use Keboola\Db\ImportExport\Backend\ImportState;
@@ -35,7 +36,7 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
      * @param Table $destination
      */
     public function executeCopyCommands(
-        array $commands,
+        Generator $commands,
         Connection $connection,
         DestinationInterface $destination,
         ImportOptions $importOptions,
@@ -62,11 +63,10 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
         DestinationInterface $destination,
         ImportOptions $importOptions,
         string $stagingTableName
-    ): array {
+    ): Generator {
         $filesToImport = $this->source->getManifestEntries();
-        $commands = [];
         foreach (array_chunk($filesToImport, ImporterInterface::SLICED_FILES_CHUNK_SIZE) as $entries) {
-            $commands[] = sprintf(
+            yield sprintf(
                 'COPY INTO %s.%s 
 FROM %s
 CREDENTIALS=(AZURE_SAS_TOKEN=\'%s\')
@@ -88,7 +88,6 @@ FILES = (%s)',
                 )
             );
         }
-        return $commands;
     }
 
     private function getCsvCopyCommandOptions(
