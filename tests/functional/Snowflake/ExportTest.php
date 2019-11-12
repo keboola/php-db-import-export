@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportFunctional\Snowflake;
 
-use Keboola\Csv\CsvFile;
+use Keboola\Csv\CsvOptions;
+use Keboola\Csv\CsvReader;
 use Keboola\Db\ImportExport\Backend\Snowflake\Exporter;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\ColumnsHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\Importer;
@@ -50,7 +51,7 @@ class ExportTest extends SnowflakeImportExportBaseTest
     public function testExportGzip(): void
     {
         // import
-        $file = new CsvFile(self::DATA_DIR . 'with-ts.csv');
+        $file = new CsvReader(self::DATA_DIR . 'with-ts.csv');
         $source = $this->createABSSourceInstance('with-ts.csv');
         $destination = new Storage\Snowflake\Table(self::SNOWFLAKE_DEST_SCHEMA_NAME, 'out.csv_2Cols');
         $options = $this->getSimpleImportOptions($file->getHeader());
@@ -91,7 +92,7 @@ class ExportTest extends SnowflakeImportExportBaseTest
     public function testExportSimple(): void
     {
         // import
-        $file = new CsvFile(self::DATA_DIR . 'with-ts.csv');
+        $file = new CsvReader(self::DATA_DIR . 'with-ts.csv');
         $source = $this->createABSSourceInstance('with-ts.csv');
         $destination = new Storage\Snowflake\Table(self::SNOWFLAKE_DEST_SCHEMA_NAME, 'out.csv_2Cols');
         $options = $this->getSimpleImportOptions($file->getHeader());
@@ -113,27 +114,27 @@ class ExportTest extends SnowflakeImportExportBaseTest
             $options
         );
 
-        $actual = $this->getCsvFileFromBlob($destination->getFilePath() . '_0_0_0.csv');
-        $expected = new CsvFile(
+        $actual = $this->getCsvReaderFromBlob($destination->getFilePath() . '_0_0_0.csv');
+        $expected = new CsvReader(
             self::DATA_DIR . 'with-ts.csv',
-            CsvFile::DEFAULT_DELIMITER,
-            CsvFile::DEFAULT_ENCLOSURE,
-            CsvFile::DEFAULT_ESCAPED_BY,
+            CsvOptions::DEFAULT_DELIMITER,
+            CsvOptions::DEFAULT_ENCLOSURE,
+            CsvOptions::DEFAULT_ESCAPED_BY,
             1 // skip header
         );
-        $this->assertCsvFilesSame($expected, $actual);
+        $this->assertCsvReadersSame($expected, $actual);
     }
 
-    private function getCsvFileFromBlob(
+    private function getCsvReaderFromBlob(
         string $filePath,
         string $tmpName = 'tmp.csv'
-    ): CsvFile {
+    ): CsvReader {
         $content = $this->getBlobContent($filePath);
         $tmp = new Temp();
         $tmp->initRunFolder();
         $actual = $tmp->getTmpFolder() . $tmpName;
         file_put_contents($actual, $content);
-        return new CsvFile($actual);
+        return new CsvReader($actual);
     }
 
     private function getBlobContent(
@@ -146,7 +147,7 @@ class ExportTest extends SnowflakeImportExportBaseTest
         return $content;
     }
 
-    public function assertCsvFilesSame(CsvFile $expected, CsvFile $actual): void
+    public function assertCsvReadersSame(CsvReader $expected, CsvReader $actual): void
     {
         $this->assertArrayEqualsSorted(
             iterator_to_array($expected),
@@ -159,7 +160,7 @@ class ExportTest extends SnowflakeImportExportBaseTest
     public function testExportSimpleWithQuery(): void
     {
         // import
-        $file = new CsvFile(self::DATA_DIR . 'tw_accounts.csv');
+        $file = new CsvReader(self::DATA_DIR . 'tw_accounts.csv');
         $source = $this->createABSSourceInstance('tw_accounts.csv');
         $destination = new Storage\Snowflake\Table(self::SNOWFLAKE_DEST_SCHEMA_NAME, 'accounts-3');
         $options = $this->getSimpleImportOptions($file->getHeader());
@@ -187,14 +188,14 @@ class ExportTest extends SnowflakeImportExportBaseTest
             $options
         );
 
-        $actual = $this->getCsvFileFromBlob($destination->getFilePath() . '_0_0_0.csv');
-        $expected = new CsvFile(
+        $actual = $this->getCsvReaderFromBlob($destination->getFilePath() . '_0_0_0.csv');
+        $expected = new CsvReader(
             self::DATA_DIR . 'tw_accounts.csv',
-            CsvFile::DEFAULT_DELIMITER,
-            CsvFile::DEFAULT_ENCLOSURE,
-            CsvFile::DEFAULT_ESCAPED_BY,
+            CsvOptions::DEFAULT_DELIMITER,
+            CsvOptions::DEFAULT_ENCLOSURE,
+            CsvOptions::DEFAULT_ESCAPED_BY,
             1 // skip header
         );
-        $this->assertCsvFilesSame($expected, $actual);
+        $this->assertCsvReadersSame($expected, $actual);
     }
 }

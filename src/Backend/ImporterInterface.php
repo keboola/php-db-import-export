@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Backend;
 
-use Keboola\Db\Import\Result;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage;
 
@@ -16,5 +15,5 @@ interface ImporterInterface
         Storage\SourceInterface $source,
         Storage\DestinationInterface $destination,
         ImportOptions $options
-    ): Result;
+    ): ImportResult;
 }

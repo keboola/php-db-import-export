@@ -6,9 +6,9 @@ namespace Keboola\Db\ImportExport\Backend\Snowflake;
 
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\ColumnsHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\DateTimeHelper;
-use Keboola\Db\ImportExport\Backend\Snowflake\Helper\QuoteHelper;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage\Snowflake\Table;
+use Keboola\SnowflakeDbAdapter\QueryBuilder;
 
 class SqlCommandBuilder
 {
@@ -28,12 +28,12 @@ class SqlCommandBuilder
         array $columns
     ): string {
         $columnsSql = array_map(function ($column) {
-            return sprintf('%s varchar', QuoteHelper::quoteIdentifier($column));
+            return sprintf('%s varchar', QueryBuilder::quoteIdentifier($column));
         }, $columns);
         return sprintf(
             'CREATE TEMPORARY TABLE %s.%s (%s)',
-            QuoteHelper::quoteIdentifier($schema),
-            QuoteHelper::quoteIdentifier($tableName),
+            QueryBuilder::quoteIdentifier($schema),
+            QueryBuilder::quoteIdentifier($tableName),
             implode(', ', $columnsSql)
         );
     }
@@ -64,14 +64,14 @@ class SqlCommandBuilder
             ColumnsHelper::getColumnsString($importOptions->getColumns(), ', '),
             $pkSql,
             $pkSql,
-            QuoteHelper::quoteIdentifier($destination->getSchema()),
-            QuoteHelper::quoteIdentifier($stagingTableName)
+            QueryBuilder::quoteIdentifier($destination->getSchema()),
+            QueryBuilder::quoteIdentifier($stagingTableName)
         );
 
         return sprintf(
             'INSERT INTO %s.%s (%s) %s',
-            QuoteHelper::quoteIdentifier($destination->getSchema()),
-            QuoteHelper::quoteIdentifier($tempTableName),
+            QueryBuilder::quoteIdentifier($destination->getSchema()),
+            QueryBuilder::quoteIdentifier($tempTableName),
             ColumnsHelper::getColumnsString($importOptions->getColumns()),
             $depudeSql
         );
@@ -85,8 +85,8 @@ class SqlCommandBuilder
         // Delete updated rows from staging table
         return sprintf(
             'DELETE FROM %s.%s "src" USING %s AS "dest" WHERE %s',
-            QuoteHelper::quoteIdentifier($destination->getSchema()),
-            QuoteHelper::quoteIdentifier($stagingTableName),
+            QueryBuilder::quoteIdentifier($destination->getSchema()),
+            QueryBuilder::quoteIdentifier($stagingTableName),
             $destination->getQuotedTableWithScheme(),
             $this->getPrimayKeyWhereConditions($primaryKeys)
         );
@@ -98,8 +98,8 @@ class SqlCommandBuilder
         $pkWhereSql = array_map(function (string $col) {
             return sprintf(
                 '"dest".%s = COALESCE("src".%s, \'\')',
-                QuoteHelper::quoteIdentifier($col),
-                QuoteHelper::quoteIdentifier($col)
+                QueryBuilder::quoteIdentifier($col),
+                QueryBuilder::quoteIdentifier($col)
             );
         }, $primaryKeys);
 
@@ -112,8 +112,8 @@ class SqlCommandBuilder
     ): string {
         return sprintf(
             'DROP TABLE %s.%s',
-            QuoteHelper::quoteIdentifier($schema),
-            QuoteHelper::quoteIdentifier($tableName)
+            QueryBuilder::quoteIdentifier($schema),
+            QueryBuilder::quoteIdentifier($tableName)
         );
     }
 
@@ -128,15 +128,15 @@ class SqlCommandBuilder
             if (in_array($column, $importOptions->getConvertEmptyValuesToNull())) {
                 return sprintf(
                     'IFF(%s = \'\', NULL, %s)',
-                    QuoteHelper::quoteIdentifier($column),
-                    QuoteHelper::quoteIdentifier($column)
+                    QueryBuilder::quoteIdentifier($column),
+                    QueryBuilder::quoteIdentifier($column)
                 );
             }
 
             return sprintf(
                 "COALESCE(%s, '') AS %s",
-                QuoteHelper::quoteIdentifier($column),
-                QuoteHelper::quoteIdentifier($column)
+                QueryBuilder::quoteIdentifier($column),
+                QueryBuilder::quoteIdentifier($column)
             );
         }, $importOptions->getColumns()));
 
@@ -148,8 +148,8 @@ class SqlCommandBuilder
                 $destination->getQuotedTableWithScheme(),
                 ColumnsHelper::getColumnsString($importOptions->getColumns()),
                 $columnsSetSqlSelect,
-                QuoteHelper::quoteIdentifier($destination->getSchema()),
-                QuoteHelper::quoteIdentifier($stagingTableName)
+                QueryBuilder::quoteIdentifier($destination->getSchema()),
+                QueryBuilder::quoteIdentifier($stagingTableName)
             );
         }
 
@@ -160,8 +160,8 @@ class SqlCommandBuilder
             Importer::TIMESTAMP_COLUMN_NAME,
             $columnsSetSqlSelect,
             DateTimeHelper::getNowFormatted(),
-            QuoteHelper::quoteIdentifier($destination->getSchema()),
-            QuoteHelper::quoteIdentifier($stagingTableName)
+            QueryBuilder::quoteIdentifier($destination->getSchema()),
+            QueryBuilder::quoteIdentifier($stagingTableName)
         );
     }
 
@@ -182,13 +182,13 @@ class SqlCommandBuilder
             if (in_array($columnName, $importOptions->getConvertEmptyValuesToNull())) {
                 $columnsSetSql[] = sprintf(
                     'IFF("src".%s = \'\', NULL, %s)',
-                    QuoteHelper::quoteIdentifier($columnName),
-                    QuoteHelper::quoteIdentifier($columnName)
+                    QueryBuilder::quoteIdentifier($columnName),
+                    QueryBuilder::quoteIdentifier($columnName)
                 );
             } else {
                 $columnsSetSql[] = sprintf(
                     'COALESCE("src".%s, \'\')',
-                    QuoteHelper::quoteIdentifier($columnName)
+                    QueryBuilder::quoteIdentifier($columnName)
                 );
             }
         }
@@ -202,8 +202,8 @@ class SqlCommandBuilder
             $destination->getQuotedTableWithScheme(),
             ColumnsHelper::getColumnsString($insColumns),
             implode(',', $columnsSetSql),
-            QuoteHelper::quoteIdentifier($destination->getSchema()),
-            QuoteHelper::quoteIdentifier($stagingTableName)
+            QueryBuilder::quoteIdentifier($destination->getSchema()),
+            QueryBuilder::quoteIdentifier($stagingTableName)
         );
     }
 
@@ -214,10 +214,10 @@ class SqlCommandBuilder
     ): string {
         return sprintf(
             'ALTER TABLE %s.%s RENAME TO %s.%s',
-            QuoteHelper::quoteIdentifier($schema),
-            QuoteHelper::quoteIdentifier($sourceTableName),
-            QuoteHelper::quoteIdentifier($schema),
-            QuoteHelper::quoteIdentifier($targetTable)
+            QueryBuilder::quoteIdentifier($schema),
+            QueryBuilder::quoteIdentifier($sourceTableName),
+            QueryBuilder::quoteIdentifier($schema),
+            QueryBuilder::quoteIdentifier($targetTable)
         );
     }
 
@@ -227,8 +227,8 @@ class SqlCommandBuilder
     ): string {
         return sprintf(
             'TRUNCATE %s.%s',
-            QuoteHelper::quoteIdentifier($schema),
-            QuoteHelper::quoteIdentifier($tableName)
+            QueryBuilder::quoteIdentifier($schema),
+            QueryBuilder::quoteIdentifier($tableName)
         );
     }
 
@@ -243,15 +243,15 @@ class SqlCommandBuilder
             if (in_array($columnName, $importOptions->getConvertEmptyValuesToNull())) {
                 $columnsSet[] = sprintf(
                     '%s = IFF("src".%s = \'\', NULL, "src".%s)',
-                    QuoteHelper::quoteIdentifier($columnName),
-                    QuoteHelper::quoteIdentifier($columnName),
-                    QuoteHelper::quoteIdentifier($columnName)
+                    QueryBuilder::quoteIdentifier($columnName),
+                    QueryBuilder::quoteIdentifier($columnName),
+                    QueryBuilder::quoteIdentifier($columnName)
                 );
             } else {
                 $columnsSet[] = sprintf(
                     '%s = COALESCE("src".%s, \'\')',
-                    QuoteHelper::quoteIdentifier($columnName),
-                    QuoteHelper::quoteIdentifier($columnName)
+                    QueryBuilder::quoteIdentifier($columnName),
+                    QueryBuilder::quoteIdentifier($columnName)
                 );
             }
         }
@@ -259,7 +259,7 @@ class SqlCommandBuilder
         if ($importOptions->useTimestamp()) {
             $columnsSet[] = sprintf(
                 '%s = \'%s\'',
-                QuoteHelper::quoteIdentifier(Importer::TIMESTAMP_COLUMN_NAME),
+                QueryBuilder::quoteIdentifier(Importer::TIMESTAMP_COLUMN_NAME),
                 DateTimeHelper::getNowFormatted()
             );
         }
@@ -269,8 +269,8 @@ class SqlCommandBuilder
             function ($columnName) {
                 return sprintf(
                     'COALESCE(TO_VARCHAR("dest".%s), \'\') != COALESCE("src".%s, \'\')',
-                    QuoteHelper::quoteIdentifier($columnName),
-                    QuoteHelper::quoteIdentifier($columnName)
+                    QueryBuilder::quoteIdentifier($columnName),
+                    QueryBuilder::quoteIdentifier($columnName)
                 );
             },
             $importOptions->getColumns()
@@ -280,8 +280,8 @@ class SqlCommandBuilder
             'UPDATE %s AS "dest" SET %s FROM %s.%s AS "src" WHERE %s AND (%s) ',
             $destination->getQuotedTableWithScheme(),
             implode(', ', $columnsSet),
-            QuoteHelper::quoteIdentifier($destination->getSchema()),
-            QuoteHelper::quoteIdentifier($stagingTableName),
+            QueryBuilder::quoteIdentifier($destination->getSchema()),
+            QueryBuilder::quoteIdentifier($stagingTableName),
             $this->getPrimayKeyWhereConditions($primaryKeys),
             implode(' OR ', $columnsComparsionSql)
         );

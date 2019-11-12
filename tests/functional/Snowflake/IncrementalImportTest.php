@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportFunctional\Snowflake;
 
-use Keboola\Csv\CsvFile;
+use Keboola\Csv\CsvReader;
 use Keboola\Db\ImportExport\Backend\Snowflake\Importer;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage;
@@ -14,7 +14,7 @@ class IncrementalImportTest extends SnowflakeImportExportBaseTest
     public function incrementalImportData(): array
     {
         // accounts
-        $expectationAccountsFile = new CsvFile(self::DATA_DIR . 'expectation.tw_accounts.increment.csv');
+        $expectationAccountsFile = new CsvReader(self::DATA_DIR . 'expectation.tw_accounts.increment.csv');
         $expectedAccountsRows = [];
         foreach ($expectationAccountsFile as $row) {
             $expectedAccountsRows[] = $row;
@@ -23,7 +23,7 @@ class IncrementalImportTest extends SnowflakeImportExportBaseTest
         $expectedAccountsRows = array_values($expectedAccountsRows);
 
         // multi pk
-        $expectationMultiPkFile = new CsvFile(self::DATA_DIR . 'expectation.multi-pk.increment.csv');
+        $expectationMultiPkFile = new CsvReader(self::DATA_DIR . 'expectation.multi-pk.increment.csv');
         $expectedMultiPkRows = [];
         foreach ($expectationMultiPkFile as $row) {
             $expectedMultiPkRows[] = $row;
