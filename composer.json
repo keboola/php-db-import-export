@@ -1,16 +1,10 @@
 {
     "name": "keboola/db-import-export",
     "description": "Package allows to import files to Snowflake from multiple cloud storages",
-    "repositories": [
-        {
-            "type": "git",
-            "url": "https://github.com/keboola/db-adapter-snowflake.git"
-        }
-    ],
     "require": {
         "php": "^7.3",
         "keboola/csv": "^2.1.0",
-        "keboola/db-adapter-snowflake": "dev-tf-init-db-snowflake",
+        "keboola/db-adapter-snowflake": "^1.0.0",
         "keboola/php-component": "^7.0.1",
         "microsoft/azure-storage-blob": "^1.4",
         "symfony/stopwatch": "^4.3"
