@@ -23,6 +23,10 @@ class ManifestReader
 
         $reader->read(); // Step to the first element.
         do {
+            if ($reader->value() === null) {
+                // on empty entries lib will return null item
+                continue;
+            }
             yield $reader->value();
         } while ($reader->next() && $reader->depth() > $depth); // Read each sibling.
 
