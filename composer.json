@@ -7,6 +7,7 @@
         "keboola/db-adapter-snowflake": "^1.0.0",
         "keboola/php-component": "^7.0.1",
         "microsoft/azure-storage-blob": "^1.4",
+        "pcrov/jsonreader": "^1.0",
         "symfony/stopwatch": "^4.3"
     },
     "require-dev": {
@@ -32,6 +33,7 @@
         }
     },
     "scripts": {
+        "testHuge": "php ./tests/testHugeManifest.php",
         "tests-unit": "phpunit tests/unit",
         "tests-functional": "phpunit tests/functional",
         "tests": [

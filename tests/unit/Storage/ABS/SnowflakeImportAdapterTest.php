@@ -53,7 +53,9 @@ class SnowflakeImportAdapterTest extends BaseTestCase
         /** @var Storage\ABS\SourceFile|MockObject $source */
         $source = self::createMock(Storage\ABS\SourceFile::class);
         $source->expects(self::once())->method('getCsvOptions')->willReturn(new CsvOptions());
-        $source->expects(self::once())->method('getManifestEntries')->willReturn(['azure://url']);
+        $source->expects(self::once())->method('getManifestEntries')->willReturnCallback(function () {
+            yield ['url' => 'azure://url'];
+        });
         $source->expects(self::exactly(2))->method('getContainerUrl')->willReturn('containerUrl');
         $source->expects(self::once())->method('getSasToken')->willReturn('sasToken');
 
@@ -88,7 +90,13 @@ EOT,
         /** @var Storage\ABS\SourceFile|MockObject $source */
         $source = self::createMock(Storage\ABS\SourceFile::class);
         $source->expects(self::exactly(2))->method('getCsvOptions')->willReturn(new CsvOptions());
-        $source->expects(self::exactly(1))->method('getManifestEntries')->willReturn($files);
+        $source->expects(self::exactly(1))->method('getManifestEntries')->willReturnCallback(
+            function () use ($files) {
+                foreach ($files as $file) {
+                    yield ['url' => $file];
+                }
+            }
+        );
         $source->expects(self::exactly(1502/*Called for each entry plus 2times*/))
             ->method('getContainerUrl')->willReturn('containerUrl');
         $source->expects(self::exactly(2))->method('getSasToken')->willReturn('sasToken');

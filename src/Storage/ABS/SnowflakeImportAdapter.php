@@ -64,30 +64,57 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
         ImportOptions $importOptions,
         string $stagingTableName
     ): Generator {
-        $filesToImport = $this->source->getManifestEntries();
-        foreach (array_chunk($filesToImport, ImporterInterface::SLICED_FILES_CHUNK_SIZE) as $entries) {
-            yield sprintf(
-                'COPY INTO %s.%s 
+        $entriesInChunk = [];
+        foreach ($this->source->getManifestEntries() as $entry) {
+            $entriesInChunk[] = $entry;
+            if (count($entriesInChunk) === ImporterInterface::SLICED_FILES_CHUNK_SIZE) {
+                yield $this->getCopyCommand(
+                    $destination,
+                    $importOptions,
+                    $stagingTableName,
+                    $entriesInChunk
+                );
+                $entriesInChunk = [];
+            }
+        }
+        yield $this->getCopyCommand(
+            $destination,
+            $importOptions,
+            $stagingTableName,
+            $entriesInChunk
+        );
+    }
+
+    /**
+     * @param Table $destination
+     */
+    private function getCopyCommand(
+        DestinationInterface $destination,
+        ImportOptions $importOptions,
+        string $stagingTableName,
+        array $entriesInChunk
+    ): string {
+        return sprintf(
+            'COPY INTO %s.%s 
 FROM %s
 CREDENTIALS=(AZURE_SAS_TOKEN=\'%s\')
 FILE_FORMAT = (TYPE=CSV %s)
 FILES = (%s)',
-                QueryBuilder::quoteIdentifier($destination->getSchema()),
-                QueryBuilder::quoteIdentifier($stagingTableName),
-                QueryBuilder::quote($this->source->getContainerUrl()),
-                $this->source->getSasToken(),
-                implode(' ', $this->getCsvCopyCommandOptions($importOptions, $this->source->getCsvOptions())),
-                implode(
-                    ', ',
-                    array_map(
-                        function ($entry) {
-                            return QueryBuilder::quote(strtr($entry, [$this->source->getContainerUrl() => '']));
-                        },
-                        $entries
-                    )
+            QueryBuilder::quoteIdentifier($destination->getSchema()),
+            QueryBuilder::quoteIdentifier($stagingTableName),
+            QueryBuilder::quote($this->source->getContainerUrl()),
+            $this->source->getSasToken(),
+            implode(' ', $this->getCsvCopyCommandOptions($importOptions, $this->source->getCsvOptions())),
+            implode(
+                ', ',
+                array_map(
+                    function ($entry) {
+                        return QueryBuilder::quote(strtr($entry['url'], [$this->source->getContainerUrl() => '']));
+                    },
+                    $entriesInChunk
                 )
-            );
-        }
+            )
+        );
     }
 
     private function getCsvCopyCommandOptions(
