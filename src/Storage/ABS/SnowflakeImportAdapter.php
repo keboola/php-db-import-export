@@ -77,12 +77,14 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
                 $entriesInChunk = [];
             }
         }
-        yield $this->getCopyCommand(
-            $destination,
-            $importOptions,
-            $stagingTableName,
-            $entriesInChunk
-        );
+        if (!empty($entriesInChunk)) {
+            yield $this->getCopyCommand(
+                $destination,
+                $importOptions,
+                $stagingTableName,
+                $entriesInChunk
+            );
+        }
     }
 
     /**

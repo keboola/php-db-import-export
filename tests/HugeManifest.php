@@ -5,16 +5,19 @@ declare(strict_types=1);
 namespace Tests\Keboola\Db\ImportExport;
 
 use Keboola\Csv\CsvOptions;
+use Keboola\Db\ImportExport\Backend\ImporterInterface;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage;
 use Keboola\Temp\Temp;
 use MicrosoftAzure\Storage\Common\Internal\Resources;
 use Symfony\Component\Stopwatch\Stopwatch;
+use Webmozart\Assert\Assert;
 
 class HugeManifest
 {
     private const MANIFEST_FILE_NAME = 'hugeManifest.json';
-    private const SLICES_TOTAL = 500 * 1000;
+    // 500k slices + something extra to test slices count
+    private const SLICES_TOTAL = (500 * ImporterInterface::SLICED_FILES_CHUNK_SIZE) + 10;
     use ABSSourceTrait;
 
     /**
@@ -69,7 +72,7 @@ class HugeManifest
         $this->stopwatch->start('upload');
         $this->uploadManifestAndSlices();
         $event = $this->stopwatch->stop('upload');
-        echo 'max memory upload: ' . $event->getMemory() . PHP_EOL;
+        echo 'max memory upload: ' . $this->getMemoryForHuman($event->getMemory()) . PHP_EOL;
 
         $this->stopwatch->start('commands');
         $this->generateCommands();
@@ -108,7 +111,10 @@ class HugeManifest
             file_get_contents($this->getManifestFileName())
         );
 
-        echo sprintf('Manifest file size: %s bytes', filesize($this->getManifestFileName())) . PHP_EOL;
+        echo sprintf(
+            'Manifest file size: %s',
+            $this->getMemoryForHuman(filesize($this->getManifestFileName()))
+        ) . PHP_EOL;
         $this->printMemory();
     }
 
@@ -184,12 +190,16 @@ class HugeManifest
         $options = new ImportOptions();
         $adapter = new Storage\ABS\SnowflakeImportAdapter($source);
         echo 'Generating commands' . PHP_EOL;
+        $commandsCount = 0;
         foreach ($adapter->getCopyCommands(
             $destination,
             $options,
             'stagingTable'
         ) as $index => $cmd) {
+            $commandsCount++;
             $this->stopwatch->lap('commands');
         };
+
+        Assert::eq(501, $commandsCount);
     }
 }

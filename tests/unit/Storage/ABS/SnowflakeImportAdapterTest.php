@@ -143,4 +143,27 @@ EOT,
             $commands->current()
         );
     }
+
+    public function testGetCopyCommandsEmptyManifest(): void
+    {
+        /** @var Storage\ABS\SourceFile|MockObject $source */
+        $source = self::createMock(Storage\ABS\SourceFile::class);
+        $source->expects(self::never())->method('getCsvOptions')->willReturn(new CsvOptions());
+        $source->expects(self::once())->method('getManifestEntries')->willReturnCallback(function () {
+            yield from [];
+        });
+        $source->expects(self::never())->method('getContainerUrl')->willReturn('containerUrl');
+        $source->expects(self::never())->method('getSasToken')->willReturn('sasToken');
+
+        $destination = new Storage\Snowflake\Table('schema', 'table');
+        $options = new ImportOptions();
+        $adapter = new SnowflakeImportAdapter($source);
+        $commands = $adapter->getCopyCommands(
+            $destination,
+            $options,
+            'stagingTable'
+        );
+
+        self::assertCount(0, iterator_to_array($commands));
+    }
 }
