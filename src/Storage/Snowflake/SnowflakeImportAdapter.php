@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\Snowflake;
 
+use Generator;
 use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\ImportOptions;
-use Keboola\Db\ImportExport\Backend\Snowflake\Helper\QuoteHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportAdapterInterface;
 use Keboola\Db\ImportExport\Storage\DestinationInterface;
 use Keboola\Db\ImportExport\Storage\SourceInterface;
@@ -32,14 +32,14 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
      * @param Table $destination
      */
     public function executeCopyCommands(
-        array $commands,
+        Generator $commands,
         Connection $connection,
         DestinationInterface $destination,
         ImportOptions $importOptions,
         ImportState $importState
     ): int {
         $importState->startTimer('copyToStaging');
-        $connection->query($commands[0]);
+        $connection->query($commands->current());
         $rows = $connection->fetchAll(sprintf(
             'SELECT COUNT(*) AS "count" FROM %s.%s',
             QueryBuilder::quoteIdentifier($destination->getSchema()),
@@ -56,7 +56,7 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
         DestinationInterface $destination,
         ImportOptions $importOptions,
         string $stagingTableName
-    ): array {
+    ): Generator {
         $quotedColumns = array_map(function ($column) {
             return QueryBuilder::quoteIdentifier($column);
         }, $importOptions->getColumns());
@@ -75,6 +75,6 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
             QueryBuilder::quoteIdentifier($this->source->getTableName()),
         );
 
-        return [$sql];
+        yield $sql;
     }
 }

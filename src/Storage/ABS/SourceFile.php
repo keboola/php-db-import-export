@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\ABS;
 
+use Generator;
 use Keboola\Csv\CsvOptions;
 use Keboola\Db\ImportExport\Backend\BackendImportAdapterInterface;
 use Keboola\Db\ImportExport\Backend\ImporterInterface;
 use Keboola\Db\ImportExport\Backend\Snowflake\Importer as SnowflakeImporter;
+use Keboola\Db\ImportExport\Storage\ManifestReader;
 use Keboola\Db\ImportExport\Storage\NoBackendAdapterException;
 use Keboola\Db\ImportExport\Storage\SourceInterface;
 use MicrosoftAzure\Storage\Blob\BlobRestProxy;
@@ -54,10 +56,11 @@ class SourceFile extends BaseFile implements SourceInterface
         return $this->csvOptions;
     }
 
-    public function getManifestEntries(): array
+    public function getManifestEntries(): Generator
     {
         if (!$this->isSliced) {
-            return [$this->getContainerUrl() . $this->filePath];
+            yield from [['url' => $this->getContainerUrl() . $this->filePath]];
+            return;
         }
 
         $SASConnectionString = sprintf(
@@ -74,9 +77,6 @@ class SourceFile extends BaseFile implements SourceInterface
         );
 
         $getResult = $blobClient->getBlob($this->container, $this->filePath);
-        $manifest = \GuzzleHttp\json_decode(stream_get_contents($getResult->getContentStream()), true);
-        return array_map(function ($entry) {
-            return $entry['url'];
-        }, $manifest['entries']);
+        yield from ManifestReader::readEntries($getResult->getContentStream());
     }
 }

@@ -62,15 +62,17 @@ class SourceFileTest extends BaseTestCase
     {
         $source = $this->createDummyABSSourceInstance('empty.csv');
         self::assertSame(
-            ['azure://absAccount.blob.core.windows.net/absContainer/empty.csv'],
-            $source->getManifestEntries()
+            [
+                ['url' => 'azure://absAccount.blob.core.windows.net/absContainer/empty.csv'],
+            ],
+            iterator_to_array($source->getManifestEntries())
         );
     }
 
     public function testGetManifestEntriesIncremental(): void
     {
         $source = $this->createABSSourceInstance('sliced/accounts/accounts.csvmanifest', true);
-        $entries = $source->getManifestEntries();
+        $entries = iterator_to_array($source->getManifestEntries());
         self::assertCount(2, $entries);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportUnit\Storage\Snowflake;
 
+use Generator;
 use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage\Snowflake\SnowflakeImportAdapter;
@@ -26,9 +27,13 @@ class SnowflakeAdapterTest extends BaseTestCase
         /** @var ImportOptions|MockObject $options */
         $options = self::createMock(ImportOptions::class);
 
+        $generator = function (): Generator {
+            yield 'cmd1';
+        };
+
         $adapter = new SnowflakeImportAdapter(new Storage\Snowflake\Table('schema', 'table'));
         $rows = $adapter->executeCopyCommands(
-            ['cmd1'],
+            $generator(),
             $connection,
             new Storage\Snowflake\Table('schema', 'table'),
             $options,
@@ -54,8 +59,9 @@ class SnowflakeAdapterTest extends BaseTestCase
             'stagingTable'
         );
 
-        self::assertSame([
+        self::assertSame(
             'INSERT INTO "schema"."stagingTable" ("col1", "col2") SELECT "col1", "col2" FROM "schema"."table"',
-        ], $commands);
+            $commands->current()
+        );
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\ABS;
 
+use Generator;
 use Keboola\Csv\CsvOptions;
 use Keboola\Db\ImportExport\Backend\ImporterInterface;
 use Keboola\Db\ImportExport\Backend\ImportState;
@@ -35,7 +36,7 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
      * @param Table $destination
      */
     public function executeCopyCommands(
-        array $commands,
+        Generator $commands,
         Connection $connection,
         DestinationInterface $destination,
         ImportOptions $importOptions,
@@ -62,33 +63,60 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
         DestinationInterface $destination,
         ImportOptions $importOptions,
         string $stagingTableName
-    ): array {
-        $filesToImport = $this->source->getManifestEntries();
-        $commands = [];
-        foreach (array_chunk($filesToImport, ImporterInterface::SLICED_FILES_CHUNK_SIZE) as $entries) {
-            $commands[] = sprintf(
-                'COPY INTO %s.%s 
+    ): Generator {
+        $entriesInChunk = [];
+        foreach ($this->source->getManifestEntries() as $entry) {
+            $entriesInChunk[] = $entry;
+            if (count($entriesInChunk) === ImporterInterface::SLICED_FILES_CHUNK_SIZE) {
+                yield $this->getCopyCommand(
+                    $destination,
+                    $importOptions,
+                    $stagingTableName,
+                    $entriesInChunk
+                );
+                $entriesInChunk = [];
+            }
+        }
+        if (!empty($entriesInChunk)) {
+            yield $this->getCopyCommand(
+                $destination,
+                $importOptions,
+                $stagingTableName,
+                $entriesInChunk
+            );
+        }
+    }
+
+    /**
+     * @param Table $destination
+     */
+    private function getCopyCommand(
+        DestinationInterface $destination,
+        ImportOptions $importOptions,
+        string $stagingTableName,
+        array $entriesInChunk
+    ): string {
+        return sprintf(
+            'COPY INTO %s.%s 
 FROM %s
 CREDENTIALS=(AZURE_SAS_TOKEN=\'%s\')
 FILE_FORMAT = (TYPE=CSV %s)
 FILES = (%s)',
-                QueryBuilder::quoteIdentifier($destination->getSchema()),
-                QueryBuilder::quoteIdentifier($stagingTableName),
-                QueryBuilder::quote($this->source->getContainerUrl()),
-                $this->source->getSasToken(),
-                implode(' ', $this->getCsvCopyCommandOptions($importOptions, $this->source->getCsvOptions())),
-                implode(
-                    ', ',
-                    array_map(
-                        function ($entry) {
-                            return QueryBuilder::quote(strtr($entry, [$this->source->getContainerUrl() => '']));
-                        },
-                        $entries
-                    )
+            QueryBuilder::quoteIdentifier($destination->getSchema()),
+            QueryBuilder::quoteIdentifier($stagingTableName),
+            QueryBuilder::quote($this->source->getContainerUrl()),
+            $this->source->getSasToken(),
+            implode(' ', $this->getCsvCopyCommandOptions($importOptions, $this->source->getCsvOptions())),
+            implode(
+                ', ',
+                array_map(
+                    function ($entry) {
+                        return QueryBuilder::quote(strtr($entry['url'], [$this->source->getContainerUrl() => '']));
+                    },
+                    $entriesInChunk
                 )
-            );
-        }
-        return $commands;
+            )
+        );
     }
 
     private function getCsvCopyCommandOptions(
