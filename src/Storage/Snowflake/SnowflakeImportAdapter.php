@@ -72,7 +72,7 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
             ' SELECT %s FROM %s.%s',
             implode(', ', $quotedColumns),
             QueryBuilder::quoteIdentifier($this->source->getSchema()),
-            QueryBuilder::quoteIdentifier($this->source->getTableName()),
+            QueryBuilder::quoteIdentifier($this->source->getTableName())
         );
 
         return [$sql];

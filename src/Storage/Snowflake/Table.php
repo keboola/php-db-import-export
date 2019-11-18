@@ -55,7 +55,7 @@ class Table implements SourceInterface, DestinationInterface
         return sprintf(
             '%s.%s',
             QueryBuilder::quoteIdentifier($this->schema),
-            QueryBuilder::quoteIdentifier($this->tableName),
+            QueryBuilder::quoteIdentifier($this->tableName)
         );
     }
 

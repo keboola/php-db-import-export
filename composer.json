@@ -8,7 +8,7 @@
         }
     ],
     "require": {
-        "php": "^7.3",
+        "php": "^7.1",
         "keboola/csv": "^2.1.0",
         "keboola/db-adapter-snowflake": "dev-tf-init-db-snowflake",
         "keboola/php-component": "^7.0.1",
