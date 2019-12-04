@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Tests\Keboola\Db\ImportExport;
+namespace Tests\Keboola\Db\ImportExport\DataLoader;
 
 use MicrosoftAzure\Storage\Blob\BlobRestProxy;
 use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
@@ -11,10 +11,8 @@ use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo;
 use function \GuzzleHttp\json_encode as guzzle_json_encode;
 
-class AbsLoader
+class AbsLoader extends BaseDataLoader
 {
-    private const BASE_DIR = __DIR__ . '/data/';
-
     /**
      * @var string
      */
@@ -130,17 +128,6 @@ class AbsLoader
         );
 
         echo "ABS load complete \n";
-    }
-
-    private function generateLargeSliced(): void
-    {
-        for ($i = 0; $i <= 1500; $i++) {
-            $sliceName = sprintf('sliced.csv_%d', $i);
-            file_put_contents(
-                self::BASE_DIR . 'sliced/2cols-large/' . $sliceName,
-                "\"a\",\"b\"\n"
-            );
-        }
     }
 
     private function generateManifests(): void

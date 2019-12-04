@@ -8,15 +8,20 @@ use Keboola\Csv\CsvFile;
 use Keboola\Db\Import\Snowflake\Connection;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage\Snowflake\Table;
-use Tests\Keboola\Db\ImportExport\ABSSourceTrait;
+use Tests\Keboola\Db\ImportExportUnit\ABSSourceTrait;
 use Tests\Keboola\Db\ImportExportFunctional\ImportExportBaseTest;
+use Tests\Keboola\Db\ImportExportUnit\S3SourceTrait;
 
 abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
 {
     protected const SNOWFLAKE_SOURCE_SCHEMA_NAME = 'some.tests';
     protected const SNOWFLAKE_DEST_SCHEMA_NAME = 'in.c-tests';
 
+    protected const STORAGE_S3 = 'S3';
+    protected const STORAGE_ABS = 'ABS';
+
     use ABSSourceTrait;
+    use S3SourceTrait;
 
     /** @var Connection */
     protected $connection;
@@ -310,6 +315,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             'port' => getenv('SNOWFLAKE_PORT'),
             'user' => getenv('SNOWFLAKE_USER'),
             'password' => getenv('SNOWFLAKE_PASSWORD'),
+            'tracing'=>6,
         ]);
         $connection->query(
             sprintf(

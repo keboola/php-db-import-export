@@ -11,7 +11,7 @@ use Keboola\Db\ImportExport\ExportOptions;
 use Keboola\Db\ImportExport\Storage;
 use Keboola\Db\ImportExport\Storage\NoBackendAdapterException;
 use PHPUnit\Framework\MockObject\MockObject;
-use Tests\Keboola\Db\ImportExport\ABSSourceTrait;
+use Tests\Keboola\Db\ImportExportUnit\ABSSourceTrait;
 use Tests\Keboola\Db\ImportExportUnit\BaseTestCase;
 
 class DestinationFileTest extends BaseTestCase

@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
-namespace Keboola\Db\ImportExport\Storage\ABS;
+namespace Keboola\Db\ImportExport\Storage\S3;
 
-use Keboola\CsvOptions\CsvOptions;
 use Keboola\Db\ImportExport\Backend\BackendImportAdapterInterface;
 use Keboola\Db\ImportExport\Backend\ImporterInterface;
 use Keboola\Db\ImportExport\ImportOptions;
@@ -41,27 +40,27 @@ class SnowflakeImportAdapter implements BackendImportAdapterInterface
         $commands = [];
         foreach (array_chunk($filesToImport, ImporterInterface::SLICED_FILES_CHUNK_SIZE) as $entries) {
             $commands[] = sprintf(
-                'COPY INTO %s.%s 
-FROM %s
-CREDENTIALS=(AZURE_SAS_TOKEN=\'%s\')
+                'COPY INTO %s.%s
+FROM %s 
+CREDENTIALS = (AWS_KEY_ID = %s AWS_SECRET_KEY = %s)
+REGION = %s
 FILE_FORMAT = (TYPE=CSV %s)
 FILES = (%s)',
                 QuoteHelper::quoteIdentifier($destination->getSchema()),
                 QuoteHelper::quoteIdentifier($stagingTableName),
-                QuoteHelper::quote($this->source->getContainerUrl()),
-                $this->source->getSasToken(),
-                implode(
-                    ' ',
-                    CopyCommandHelper::getCsvCopyCommandOptions(
-                        $importOptions,
-                        $this->source->getCsvOptions()
-                    )
-                ),
+                QuoteHelper::quote($this->source->getS3Prefix()),
+                QuoteHelper::quote($this->source->getKey()),
+                QuoteHelper::quote($this->source->getSecret()),
+                QuoteHelper::quote($this->source->getRegion()),
+                implode(' ', CopyCommandHelper::getCsvCopyCommandOptions(
+                    $importOptions,
+                    $this->source->getCsvOptions()
+                )),
                 implode(
                     ', ',
                     array_map(
                         function ($entry) {
-                            return QuoteHelper::quote(strtr($entry, [$this->source->getContainerUrl() => '']));
+                            return QuoteHelper::quote(strtr($entry, [$this->source->getS3Prefix().'/' => '']));
                         },
                         $entries
                     )

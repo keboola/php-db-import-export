@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Tests\Keboola\Db\ImportExport;
+namespace Tests\Keboola\Db\ImportExportUnit;
 
 use DateTime;
 use Keboola\CsvOptions\CsvOptions;

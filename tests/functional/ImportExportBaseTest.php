@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Keboola\Db\ImportExportFunctional;
 
 use PHPUnit\Framework\TestCase;
-use Tests\Keboola\Db\ImportExport\ABSSourceTrait;
+use Tests\Keboola\Db\ImportExportUnit\ABSSourceTrait;
 
 abstract class ImportExportBaseTest extends TestCase
 {
