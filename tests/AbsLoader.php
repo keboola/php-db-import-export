@@ -13,27 +13,27 @@ use function \GuzzleHttp\json_encode as guzzle_json_encode;
 
 class AbsLoader
 {
-    private const BASE_DIR = __DIR__ . '/data/';
+    protected const BASE_DIR = __DIR__ . '/data/';
 
     /**
      * @var string
      */
-    private $accountName;
+    protected $accountName;
 
     /**
      * @var string
      */
-    private $containerName;
+    protected $containerName;
 
     /**
      * @var string
      */
-    private $connectionString;
+    protected $connectionString;
 
     /**
      * @var BlobRestProxy
      */
-    private $blobService;
+    protected $blobService;
 
     public function __construct(
         string $accountName,
@@ -132,7 +132,7 @@ class AbsLoader
         echo "ABS load complete \n";
     }
 
-    private function generateLargeSliced(): void
+    protected function generateLargeSliced(): void
     {
         for ($i = 0; $i <= 1500; $i++) {
             $sliceName = sprintf('sliced.csv_%d', $i);
@@ -143,7 +143,7 @@ class AbsLoader
         }
     }
 
-    private function generateManifests(): void
+    protected function generateManifests(): void
     {
         echo "Generating manifests ...\n";
         // GENERATE SLICED FILE MANIFEST
