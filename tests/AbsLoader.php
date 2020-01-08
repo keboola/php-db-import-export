@@ -99,13 +99,13 @@ class AbsLoader
 
         echo "Creating blobs ...\n";
         //UPLOAD ALL FILES TO ABS
-        $files = (new Finder())->in(self::BASE_DIR)->files();
+        $files = (new Finder())->in(static::BASE_DIR)->files();
 
         /** @var \Symfony\Component\Finder\SplFileInfo $file */
         foreach ($files as $file) {
             $this->getBlobService()->createBlockBlob(
                 $this->containerName,
-                strtr($file->getPathname(), [self::BASE_DIR => '']),
+                strtr($file->getPathname(), [static::BASE_DIR => '']),
                 $file->getContents()
             );
         }
@@ -137,7 +137,7 @@ class AbsLoader
         for ($i = 0; $i <= 1500; $i++) {
             $sliceName = sprintf('sliced.csv_%d', $i);
             file_put_contents(
-                self::BASE_DIR . 'sliced/2cols-large/' . $sliceName,
+                static::BASE_DIR . 'sliced/2cols-large/' . $sliceName,
                 "\"a\",\"b\"\n"
             );
         }
@@ -149,7 +149,7 @@ class AbsLoader
         // GENERATE SLICED FILE MANIFEST
         $finder = new Finder();
 
-        $directories = $finder->in(self::BASE_DIR . 'sliced')->directories()->depth(0);
+        $directories = $finder->in(static::BASE_DIR . 'sliced')->directories()->depth(0);
 
         /** @var SplFileInfo $directory */
         foreach ($directories as $directory) {
