@@ -131,7 +131,7 @@ class FullImportTest extends SynapseBaseTestCase
             $this->getSimpleImportOptions($accountChangedColumnsOrderHeader),
             $expectedAccounts,
             3,
-            [self::TABLE_ACCOUNTS_3]
+            [self::TABLE_ACCOUNTS_3],
         ];
         $tests[] = [
             $this->createABSSourceInstance('tw_accounts.csv'),
@@ -139,7 +139,7 @@ class FullImportTest extends SynapseBaseTestCase
             $this->getSimpleImportOptions($accountsHeader),
             $expectedAccounts,
             3,
-            [self::TABLE_ACCOUNTS_3]
+            [self::TABLE_ACCOUNTS_3],
         ];
         // manifests
         $tests[] = [
@@ -148,7 +148,7 @@ class FullImportTest extends SynapseBaseTestCase
             $this->getSimpleImportOptions($accountsHeader, ImportOptions::SKIP_NO_LINE),
             $expectedAccounts,
             3,
-            [self::TABLE_ACCOUNTS_3]
+            [self::TABLE_ACCOUNTS_3],
         ];
 
         $tests[] = [
@@ -157,7 +157,7 @@ class FullImportTest extends SynapseBaseTestCase
             $this->getSimpleImportOptions($accountsHeader, ImportOptions::SKIP_NO_LINE),
             $expectedAccounts,
             3,
-            [self::TABLE_ACCOUNTS_3]
+            [self::TABLE_ACCOUNTS_3],
         ];
 
         // reserved words

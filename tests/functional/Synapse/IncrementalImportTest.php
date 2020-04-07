@@ -49,7 +49,7 @@ class IncrementalImportTest extends SynapseBaseTestCase
             new Storage\Synapse\Table(self::SYNAPSE_DEST_SCHEMA_NAME, 'accounts-3'),
             $expectedAccountsRows,
             4,
-            [self::TABLE_ACCOUNTS_3]
+            [self::TABLE_ACCOUNTS_3],
         ];
         $tests[] = [
             $this->createABSSourceInstance('tw_accounts.csv', false),
@@ -71,7 +71,7 @@ class IncrementalImportTest extends SynapseBaseTestCase
             new Storage\Synapse\Table(self::SYNAPSE_DEST_SCHEMA_NAME, 'accounts-bez-ts'),
             $expectedAccountsRows,
             4,
-            [self::TABLE_ACCOUNTS_BEZ_TS]
+            [self::TABLE_ACCOUNTS_BEZ_TS],
         ];
         $tests[] = [
             $this->createABSSourceInstance('multi-pk.csv', false),
