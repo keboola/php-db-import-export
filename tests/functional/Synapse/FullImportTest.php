@@ -131,8 +131,7 @@ class FullImportTest extends SynapseBaseTestCase
             $this->getSimpleImportOptions($accountChangedColumnsOrderHeader),
             $expectedAccounts,
             3,
-            [self::TABLE_ACCOUNTS_3],
-            true,
+            [self::TABLE_ACCOUNTS_3]
         ];
         $tests[] = [
             $this->createABSSourceInstance('tw_accounts.csv'),
@@ -140,8 +139,7 @@ class FullImportTest extends SynapseBaseTestCase
             $this->getSimpleImportOptions($accountsHeader),
             $expectedAccounts,
             3,
-            [self::TABLE_ACCOUNTS_3],
-            true,
+            [self::TABLE_ACCOUNTS_3]
         ];
         // manifests
         $tests[] = [
@@ -150,8 +148,7 @@ class FullImportTest extends SynapseBaseTestCase
             $this->getSimpleImportOptions($accountsHeader, ImportOptions::SKIP_NO_LINE),
             $expectedAccounts,
             3,
-            [self::TABLE_ACCOUNTS_3],
-            true,
+            [self::TABLE_ACCOUNTS_3]
         ];
 
         $tests[] = [
@@ -160,8 +157,7 @@ class FullImportTest extends SynapseBaseTestCase
             $this->getSimpleImportOptions($accountsHeader, ImportOptions::SKIP_NO_LINE),
             $expectedAccounts,
             3,
-            [self::TABLE_ACCOUNTS_3],
-            true,
+            [self::TABLE_ACCOUNTS_3]
         ];
 
         // reserved words
@@ -240,8 +236,7 @@ class FullImportTest extends SynapseBaseTestCase
         ImportOptions $options,
         array $expected,
         int $expectedImportedRowCount,
-        array $tablesToInit,
-        bool $isSkipped = false
+        array $tablesToInit
     ): void {
         $this->initTables($tablesToInit);
 
@@ -252,12 +247,6 @@ class FullImportTest extends SynapseBaseTestCase
         );
 
         self::assertEquals($expectedImportedRowCount, $result->getImportedRowsCount());
-
-        if ($isSkipped === true) {
-            $this->markTestIncomplete(
-                'Skip assertion due to UTF-8 COPY INTO error in synapse.'
-            );
-        }
 
         $this->assertTableEqualsExpected(
             $destination,
