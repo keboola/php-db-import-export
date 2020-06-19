@@ -18,7 +18,6 @@ services:
       - SYNAPSE_SERVER
   dev: &dev
     <<: *prod
-    image: keboola/php-db-import-export
     volumes:
       - ./:/code
   dev-xdebug:
