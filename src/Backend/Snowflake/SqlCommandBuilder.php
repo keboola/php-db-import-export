@@ -124,44 +124,45 @@ class SqlCommandBuilder
         ImportOptions $importOptions,
         string $stagingTableName
     ): string {
-        $columnsSetSqlSelect = implode(', ', array_map(function ($column) use (
-            $importOptions
-        ) {
-            if (in_array($column, $importOptions->getConvertEmptyValuesToNull())) {
+        $targetColumns = $source->getColumnsNames();
+
+        $sourceColumns = array_map(
+            function ($column) use (
+                $importOptions
+            ) {
+                if (in_array($column, $importOptions->getConvertEmptyValuesToNull())) {
+                    return sprintf(
+                        'IFF(%s = \'\', NULL, %s)',
+                        QuoteHelper::quoteIdentifier($column),
+                        QuoteHelper::quoteIdentifier($column)
+                    );
+                }
+
                 return sprintf(
-                    'IFF(%s = \'\', NULL, %s)',
+                    "COALESCE(%s, '') AS %s",
                     QuoteHelper::quoteIdentifier($column),
                     QuoteHelper::quoteIdentifier($column)
                 );
-            }
+            },
+            $source->getColumnsNames()
+        );
 
-            return sprintf(
-                "COALESCE(%s, '') AS %s",
-                QuoteHelper::quoteIdentifier($column),
-                QuoteHelper::quoteIdentifier($column)
-            );
-        }, $source->getColumnsNames()));
-
-        if (in_array(Importer::TIMESTAMP_COLUMN_NAME, $source->getColumnsNames())
-            || $importOptions->useTimestamp() === false
+        if (
+            !in_array(Importer::TIMESTAMP_COLUMN_NAME, $source->getColumnsNames())
+            && $importOptions->useTimestamp() !== false
         ) {
-            return sprintf(
-                'INSERT INTO %s (%s) (SELECT %s FROM %s.%s)',
-                $destination->getQuotedTableWithScheme(),
-                ColumnsHelper::getColumnsString($source->getColumnsNames()),
-                $columnsSetSqlSelect,
-                QuoteHelper::quoteIdentifier($destination->getSchema()),
-                QuoteHelper::quoteIdentifier($stagingTableName)
-            );
+            $targetColumns[] = Importer::TIMESTAMP_COLUMN_NAME;
+            $sourceColumns[] = QuoteHelper::quote(DateTimeHelper::getNowFormatted());
         }
 
+        $columnsSetSqlSelect = implode(', ', $sourceColumns);
+
+
         return sprintf(
-            'INSERT INTO %s (%s, "%s") (SELECT %s, \'%s\' FROM %s.%s)',
+            'INSERT INTO %s (%s) (SELECT %s FROM %s.%s)',
             $destination->getQuotedTableWithScheme(),
-            ColumnsHelper::getColumnsString($source->getColumnsNames()),
-            Importer::TIMESTAMP_COLUMN_NAME,
+            ColumnsHelper::getColumnsString($targetColumns),
             $columnsSetSqlSelect,
-            DateTimeHelper::getNowFormatted(),
             QuoteHelper::quoteIdentifier($destination->getSchema()),
             QuoteHelper::quoteIdentifier($stagingTableName)
         );
@@ -174,10 +175,10 @@ class SqlCommandBuilder
         string $stagingTableName,
         string $timestampValue
     ): string {
+        $insColumns = $source->getColumnsNames();
+
         if ($importOptions->useTimestamp()) {
-            $insColumns = array_merge($source->getColumnsNames(), [Importer::TIMESTAMP_COLUMN_NAME]);
-        } else {
-            $insColumns = $source->getColumnsNames();
+            $insColumns = array_merge($insColumns, [Importer::TIMESTAMP_COLUMN_NAME]);
         }
 
         $columnsSetSql = [];
