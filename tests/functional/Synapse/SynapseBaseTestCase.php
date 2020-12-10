@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportFunctional\Synapse;
 
+use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Logging\EchoSQLLogger;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Platforms\SQLServer2012Platform;
 use Keboola\Db\ImportExport\Backend\Synapse\SqlCommandBuilder;
@@ -274,19 +276,23 @@ EOT
 
     private function getSynapseConnection(): Connection
     {
-        return \Doctrine\DBAL\DriverManager::getConnection([
-            'user' => getenv('SYNAPSE_UID'),
-            'password' => getenv('SYNAPSE_PWD'),
-            'host' => getenv('SYNAPSE_SERVER'),
-            'dbname' => getenv('SYNAPSE_DATABASE'),
-            'port' => 1433,
-            'driver' => 'pdo_sqlsrv',
-            'driverOptions'=>[
-                'ConnectRetryCount' => 5,
-                'ConnectRetryInterval' => 10,
+        $conf = new Configuration;
+        $conf->setSQLLogger(new EchoSQLLogger());
+        return \Doctrine\DBAL\DriverManager::getConnection(
+            [
+                'user' => getenv('SYNAPSE_UID'),
+                'password' => getenv('SYNAPSE_PWD'),
+                'host' => getenv('SYNAPSE_SERVER'),
+                'dbname' => getenv('SYNAPSE_DATABASE'),
+                'port' => 1433,
+                'driver' => 'pdo_sqlsrv',
+                'driverOptions' => [
+                    'ConnectRetryCount' => 5,
+                    'ConnectRetryInterval' => 10,
 //                \PDO::SQLSRV_ATTR_QUERY_TIMEOUT => 1
+                ],
             ],
-        ]);
+            $conf);
     }
 
     /**
@@ -347,7 +353,8 @@ EOT
             true,
             $skipLines,
             getenv('CREDENTIALS_IMPORT_TYPE'),
-            getenv('TEMP_TABLE_TYPE')
+            getenv('TEMP_TABLE_TYPE'),
+            (string) getenv('ABS_ACCOUNT_KEY')
         );
     }
 
@@ -360,7 +367,8 @@ EOT
             true,
             $skipLines,
             getenv('CREDENTIALS_IMPORT_TYPE'),
-            getenv('TEMP_TABLE_TYPE')
+            getenv('TEMP_TABLE_TYPE'),
+            (string) getenv('ABS_ACCOUNT_KEY')
         );
     }
 }

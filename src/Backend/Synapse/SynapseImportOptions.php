@@ -8,6 +8,7 @@ use Keboola\Db\ImportExport\ImportOptions;
 
 class SynapseImportOptions extends ImportOptions
 {
+    public const CREDENTIALS_MASTER_KEY = 'MASTER_KEY';
     public const CREDENTIALS_MANAGED_IDENTITY = 'MANAGED_IDENTITY';
     public const CREDENTIALS_SAS = 'SAS';
 
@@ -22,13 +23,17 @@ class SynapseImportOptions extends ImportOptions
     /** @var string */
     private $tempTableType;
 
+    /** @var string|null */
+    private $blobMasterKey;
+
     public function __construct(
         array $convertEmptyValuesToNull = [],
         bool $isIncremental = false,
         bool $useTimestamp = false,
         int $numberOfIgnoredLines = 0,
         string $importCredentialsType = self::CREDENTIALS_SAS,
-        string $tempTableType = self::TEMP_TABLE_HEAP
+        string $tempTableType = self::TEMP_TABLE_HEAP,
+        string $blobMasterKey = null
     ) {
         parent::__construct(
             $convertEmptyValuesToNull,
@@ -38,6 +43,11 @@ class SynapseImportOptions extends ImportOptions
         );
         $this->importCredentialsType = $importCredentialsType;
         $this->tempTableType = $tempTableType;
+
+        if ($importCredentialsType === self::CREDENTIALS_MASTER_KEY && $blobMasterKey === null) {
+            throw new \LogicException('Master key authorization for polybase import used, but not blob storage master key supplied.');
+        }
+        $this->blobMasterKey = $blobMasterKey;
     }
 
     public function getImportCredentialsType(): string
@@ -48,5 +58,10 @@ class SynapseImportOptions extends ImportOptions
     public function getTempTableType(): string
     {
         return $this->tempTableType;
+    }
+
+    public function getBlobMasterKey(): ?string
+    {
+        return $this->blobMasterKey;
     }
 }

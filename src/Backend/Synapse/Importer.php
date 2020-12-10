@@ -19,7 +19,8 @@ class Importer implements ImporterInterface
     public const TIMESTAMP_COLUMN_NAME = '_timestamp';
 
     public const DEFAULT_ADAPTERS = [
-        Storage\ABS\SynapseImportAdapter::class,
+//        Storage\ABS\SynapseImportAdapter::class,
+        Storage\ABS\SynapsePolyBaseImportAdapter::class,
         Storage\Synapse\SynapseImportAdapter::class,
     ];
 

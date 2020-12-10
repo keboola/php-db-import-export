@@ -23,6 +23,11 @@
             <exclude>tests/functional/Synapse/SqlCommandBuilderTest.php</exclude>
         </testsuite>
 
+        <testsuite name="synapse-polybase">
+            <directory>tests/functional/Synapse</directory>
+            <exclude>tests/functional/Synapse/SqlCommandBuilderTest.php</exclude>
+        </testsuite>
+
         <testsuite name="tests-synapse-columnstoretemp">
             <directory>tests/functional/Synapse</directory>
             <exclude>tests/functional/Synapse/SqlCommandBuilderTest.php</exclude>

@@ -60,7 +60,8 @@ class IncrementalImportTest extends SynapseBaseTestCase
                 false, // disable timestamp
                 ImportOptions::SKIP_FIRST_LINE,
                 getenv('CREDENTIALS_IMPORT_TYPE'),
-                getenv('TEMP_TABLE_TYPE')
+                getenv('TEMP_TABLE_TYPE'),
+                (string) getenv('ABS_ACCOUNT_KEY')
             ),
             $this->createABSSourceInstance('tw_accounts.increment.csv', $accountColumns, false),
             new SynapseImportOptions(
@@ -69,7 +70,8 @@ class IncrementalImportTest extends SynapseBaseTestCase
                 false, // disable timestamp
                 ImportOptions::SKIP_FIRST_LINE,
                 getenv('CREDENTIALS_IMPORT_TYPE'),
-                getenv('TEMP_TABLE_TYPE')
+                getenv('TEMP_TABLE_TYPE'),
+                (string) getenv('ABS_ACCOUNT_KEY')
             ),
             new Storage\Synapse\Table($this->getDestinationSchemaName(), 'accounts-bez-ts'),
             $expectedAccountsRows,

@@ -66,7 +66,7 @@ EOT;
 
         return <<<EOT
 CREATE EXTERNAL DATA SOURCE $dataSourceId
-WITH 
+WITH
 (
     TYPE = HADOOP,
     LOCATION = $containerUrl,
@@ -84,7 +84,7 @@ CREATE EXTERNAL FILE FORMAT $fileFormatId
 WITH
 (
     FORMAT_TYPE = DelimitedText,
-    FORMAT_OPTIONS 
+    FORMAT_OPTIONS
     (
         FIELD_TERMINATOR = ',',
         STRING_DELIMITER = '"',
@@ -128,7 +128,7 @@ EOT;
 
         return <<<EOT
 CREATE EXTERNAL TABLE $tableId
-WITH 
+WITH
 (
     LOCATION='$exportPath',
     DATA_SOURCE = $dataSourceId,
