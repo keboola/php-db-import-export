@@ -249,11 +249,35 @@ class Importer implements ImporterInterface
         Storage\Synapse\Table $destination,
         array $primaryKeys
     ): void {
+        $isLoadFromFile = $source instanceof Storage\ABS\SourceFile;
         $tempTableName = $this->createTempTableForDedup($source, $destination, $importOptions);
 
         $this->runQuery(
             $this->sqlBuilder->getBeginTransaction()
         );
+
+        if($isLoadFromFile && !empty($primaryKeys)){
+            $this->runQuery(
+                $this->sqlBuilder->getTruncateTableWithDeleteCommand(
+                    $destination->getSchema(),
+                    $destination->getTableName()
+                )
+            );
+
+            $this->importState->startTimer('dedup');
+            $this->runQuery(
+                $this->sqlBuilder->getDedupCommand(
+                    $source,
+                    $destination,
+                    $primaryKeys,
+                    $destination->getTableName(),
+                    $tempTableName
+                )
+            );
+            $this->importState->stopTimer('dedup');
+            return;
+        }
+        // workflow for table->table load or file->table without primary keys
 
         if (!empty($primaryKeys)) {
             $this->importState->startTimer('dedup');
