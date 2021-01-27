@@ -218,7 +218,6 @@ class SqlCommandBuilder
             'CREATE TABLE %s WITH (DISTRIBUTION = ROUND_ROBIN) AS %s',
             $destination->getQuotedTableWithScheme(),
             $depudeSql
-
         );
     }
 
