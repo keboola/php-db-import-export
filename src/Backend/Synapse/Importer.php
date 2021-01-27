@@ -256,7 +256,7 @@ class Importer implements ImporterInterface
             $this->sqlBuilder->getBeginTransaction()
         );
 
-        if($isLoadFromFile && !empty($primaryKeys)){
+        if ($isLoadFromFile && !empty($primaryKeys)) {
             $this->runQuery(
                 $this->sqlBuilder->getTruncateTableWithDeleteCommand(
                     $destination->getSchema(),
