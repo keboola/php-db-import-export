@@ -249,15 +249,9 @@ class Importer implements ImporterInterface
         Storage\Synapse\Table $destination,
         array $primaryKeys
     ): void {
-        $tempTableName = $this->createTempTableForDedup($source, $destination, $importOptions);
-
-        $this->runQuery(
-            $this->sqlBuilder->getBeginTransaction()
-        );
-
         if (!empty($primaryKeys)) {
             $this->runQuery(
-                $this->sqlBuilder->getTruncateTableWithDeleteCommand(
+                $this->sqlBuilder->getDropCommand(
                     $destination->getSchema(),
                     $destination->getTableName()
                 )
@@ -265,21 +259,22 @@ class Importer implements ImporterInterface
 
             $this->importState->startTimer('dedup');
             $this->runQuery(
-                $this->sqlBuilder->getDedupCommand(
+                $this->sqlBuilder->getCtasDedupCommand(
                     $source,
                     $destination,
                     $primaryKeys,
-                    $destination->getTableName(),
-                    $tempTableName
+                    $this->importState->getStagingTableName(),
+                    $importOptions,
+                    DateTimeHelper::getNowFormatted()
                 )
             );
             $this->importState->stopTimer('dedup');
-            $this->runQuery(
-                $this->sqlBuilder->getCommitTransaction()
-            );
             return;
         }
         // workflow without primary keys
+        $this->runQuery(
+            $this->sqlBuilder->getBeginTransaction()
+        );
 
         $this->runQuery(
             $this->sqlBuilder->getTruncateTableWithDeleteCommand(
