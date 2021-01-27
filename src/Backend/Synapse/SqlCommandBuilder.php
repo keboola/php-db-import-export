@@ -381,7 +381,7 @@ class SqlCommandBuilder
     public function getTableColumnsCommand(string $tableObjectId): string
     {
         return sprintf(
-            'SELECT [NAME] FROM sys.all_columns WHERE object_id = %s',
+            'SELECT [NAME] FROM [sys].[COLUMNS] WHERE [object_id] = %s ORDER BY [column_id]',
             $this->connection->quote($tableObjectId)
         );
     }
