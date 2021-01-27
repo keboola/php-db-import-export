@@ -163,7 +163,8 @@ class SqlCommandBuilder
         array $primaryKeys,
         string $stagingTableName,
         ImportOptionsInterface $importOptions,
-        string $timestamp
+        string $timestamp,
+        array $columnsInOrder
     ): string {
         if (empty($primaryKeys)) {
             return '';
@@ -174,16 +175,19 @@ class SqlCommandBuilder
             ','
         );
 
-        $insColumns = $source->getColumnsNames();
-        $useTimestamp = !in_array(Importer::TIMESTAMP_COLUMN_NAME, $insColumns, true)
-            && $importOptions->useTimestamp();
-
-        $insColumns = $this->getColumnsString($insColumns, ',', 'a');
-        if ($useTimestamp) {
-            $insColumns .= ', ' . $this->connection->quote($timestamp) . ' AS [_timestamp]';
+        $timestampColIndex = array_search(Importer::TIMESTAMP_COLUMN_NAME, $columnsInOrder);
+        if ($timestampColIndex !== false) {
+            unset($columnsInOrder[$timestampColIndex]);
         }
 
-//        $columnsSetSql = $source->getColumnsNames();
+        $useTimestamp = !in_array(Importer::TIMESTAMP_COLUMN_NAME, $source->getColumnsNames(), true)
+            && $importOptions->useTimestamp();
+
+        $createTableColumns = $this->getColumnsString($columnsInOrder, ',', 'a');
+        if ($useTimestamp) {
+            $createTableColumns .= ', ' . $this->connection->quote($timestamp) . ' AS [_timestamp]';
+        }
+
         $columnsSetSql = [];
         foreach ($source->getColumnsNames() as $columnName) {
             if (in_array($columnName, $importOptions->getConvertEmptyValuesToNull(), true)) {
@@ -206,7 +210,7 @@ class SqlCommandBuilder
             . 'FROM %s.%s'
             . ') AS a '
             . 'WHERE a."_row_number_" = 1',
-            $insColumns,
+            $createTableColumns,
             implode(',', $columnsSetSql),
             $pkSql,
             $pkSql,

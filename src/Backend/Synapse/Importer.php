@@ -250,6 +250,10 @@ class Importer implements ImporterInterface
         array $primaryKeys
     ): void {
         if (!empty($primaryKeys)) {
+            $columnsNames = $this->sqlBuilder->getTableColumns(
+                $destination->getSchema(),
+                $destination->getTableName()
+            );
             $this->runQuery(
                 $this->sqlBuilder->getDropCommand(
                     $destination->getSchema(),
@@ -265,7 +269,8 @@ class Importer implements ImporterInterface
                     $primaryKeys,
                     $this->importState->getStagingTableName(),
                     $importOptions,
-                    DateTimeHelper::getNowFormatted()
+                    DateTimeHelper::getNowFormatted(),
+                    $columnsNames
                 )
             );
             $this->importState->stopTimer('dedup');
