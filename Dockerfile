@@ -7,7 +7,7 @@ ENV COMPOSER_PROCESS_TIMEOUT 3600
 
 ARG SQLSRV_VERSION=5.6.1
 ARG SNOWFLAKE_ODBC_VERSION=2.22.5
-ARG SNOWFLAKE_GPG_KEY=EC218558EABB25A1
+ARG SNOWFLAKE_GPG_KEY=37C7086698CB005C
 
 WORKDIR /code/
 
@@ -73,7 +73,7 @@ RUN mkdir -p ~/.gnupg \
     && chmod 700 ~/.gnupg \
     && echo "disable-ipv6" >> ~/.gnupg/dirmngr.conf \
     && mkdir -p /usr/share/debsig/keyrings/$SNOWFLAKE_GPG_KEY \
-    && gpg --keyserver hkp://keyserver.ubuntu.com --recv-keys $SNOWFLAKE_GPG_KEY \
+    && gpg --keyserver hkp://keys.gnupg.net --recv-keys $SNOWFLAKE_GPG_KEY \
     && gpg --export $SNOWFLAKE_GPG_KEY > /usr/share/debsig/keyrings/$SNOWFLAKE_GPG_KEY/debsig.gpg \
     && debsig-verify /tmp/snowflake-odbc.deb \
     && gpg --batch --delete-key --yes $SNOWFLAKE_GPG_KEY \
