@@ -3,7 +3,7 @@
     "description": "Package allows to import files to Snowflake from multiple cloud storages",
     "license": "MIT",
     "require": {
-        "php": "^7.1",
+        "php": "^7.4",
         "doctrine/dbal": "^2.9",
         "keboola/csv-options": "^1",
         "keboola/php-csv-db-import": "^5.0",
