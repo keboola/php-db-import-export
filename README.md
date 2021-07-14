@@ -75,6 +75,26 @@ How to setup and use Managed Identity is described in [docs](https://docs.micros
 > TLDR;
 > In IAM of ABS add role assignment "Blob Storage Data {Reader or Contributor}" to your Synapse server principal
 
+#### Teradata
+
+Prepare Teradata servers on AWS/Azure and set following properties. See
+
+set up env variables:
+```bash
+TERADATA_HOST=
+TERADATA_PORT=1025
+TERADATA_USERNAME=
+TERADATA_PASSWORD=
+```
+
+In order to download TD odbc driver, create a user who can access S3 bucket with the driver package.
+
+set up env variables:
+```bash
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+```
+
 ### Tests
 
 Run tests with following command.

@@ -1,3 +1,8 @@
+FROM quay.io/keboola/aws-cli
+ARG AWS_SECRET_ACCESS_KEY
+ARG AWS_ACCESS_KEY_ID
+RUN /usr/bin/aws s3 cp s3://keboola-drivers/teradata/tdodbc1710-17.10.00.08-1.x86_64.deb /tmp/tdodbc.deb
+
 FROM php:7.1-cli
 
 ARG COMPOSER_FLAGS="--prefer-dist --no-interaction"
@@ -63,12 +68,6 @@ COPY ./docker/snowflake/generic.pol /etc/debsig/policies/$SNOWFLAKE_GPG_KEY/gene
 ADD https://sfc-repo.snowflakecomputing.com/odbc/linux/$SNOWFLAKE_ODBC_VERSION/snowflake-odbc-$SNOWFLAKE_ODBC_VERSION.x86_64.deb /tmp/snowflake-odbc.deb
 COPY ./docker/snowflake/simba.snowflake.ini /usr/lib/snowflake/odbc/lib/simba.snowflake.ini
 
-#Synapse ODBC
-RUN set -ex; \
-    pecl install sqlsrv-$SQLSRV_VERSION pdo_sqlsrv-$SQLSRV_VERSION; \
-    docker-php-ext-enable sqlsrv pdo_sqlsrv; \
-    docker-php-source delete
-
 RUN mkdir -p ~/.gnupg \
     && chmod 700 ~/.gnupg \
     && echo "disable-ipv6" >> ~/.gnupg/dirmngr.conf \
@@ -78,6 +77,31 @@ RUN mkdir -p ~/.gnupg \
     && debsig-verify /tmp/snowflake-odbc.deb \
     && gpg --batch --delete-key --yes $SNOWFLAKE_GPG_KEY \
     && dpkg -i /tmp/snowflake-odbc.deb
+
+#Synapse ODBC
+RUN set -ex; \
+    pecl install sqlsrv-$SQLSRV_VERSION pdo_sqlsrv-$SQLSRV_VERSION; \
+    docker-php-ext-enable sqlsrv pdo_sqlsrv; \
+    docker-php-source delete
+
+# Teradata
+COPY --from=0 /tmp/tdodbc.deb /tmp/tdodbc.deb
+COPY docker/teradata/odbc.ini /tmp/odbc_td.ini
+COPY docker/teradata/odbcinst.ini /tmp/odbcinst_td.ini
+
+RUN dpkg -i /tmp/tdodbc.deb \
+    && cat /tmp/odbc_td.ini >> /etc/odbc.ini \
+    && cat /tmp/odbcinst_td.ini >> /etc/odbcinst.ini \
+    && rm /tmp/odbc_td.ini \
+    && rm /tmp/odbcinst_td.ini \
+    && rm /tmp/tdodbc.deb \
+    && docker-php-ext-configure pdo_odbc --with-pdo-odbc=unixODBC,/usr \
+    && docker-php-ext-install pdo_odbc
+
+ENV ODBCHOME = /opt/teradata/client/ODBC_64/
+ENV ODBCINI = /opt/teradata/client/ODBC_64/odbc.ini
+ENV ODBCINST = /opt/teradata/client/ODBC_64/odbcinst.ini
+ENV LD_LIBRARY_PATH = /opt/teradata/client/ODBC_64/lib
 
 ## Composer - deps always cached unless changed
 # First copy only composer files
