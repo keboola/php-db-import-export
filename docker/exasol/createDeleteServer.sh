@@ -82,6 +82,8 @@ waitForCreate(){
     local newDbId=$(createDbWithId)
     while [[ $(date -u +%s) -le ${endtime} ]]
     do
+        echo "Exasol response: "
+        echo $(getDb $newDbId)
         local status=$(getDbStatus $newDbId)
         echo "Exasol DB status: "${status}
         if [[ ${status} == "running" ]]; then
