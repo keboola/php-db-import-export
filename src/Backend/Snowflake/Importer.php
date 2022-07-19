@@ -23,6 +23,7 @@ class Importer implements ImporterInterface
     public const DEFAULT_ADAPTERS = [
         Storage\ABS\SnowflakeImportAdapter::class,
         Storage\S3\SnowflakeImportAdapter::class,
+        Storage\GCS\SnowflakeImportAdapter::class,
         Storage\Snowflake\SnowflakeImportAdapter::class,
     ];
 
