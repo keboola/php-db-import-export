@@ -50,7 +50,7 @@ FILE_FORMAT = (
     %s
     TIMESTAMP_FORMAT = \'YYYY-MM-DD HH24:MI:SS\'
 )
-MAX_FILE_SIZE=50000000
+MAX_FILE_SIZE=4000000000
 DETAILED_OUTPUT = TRUE',
             $destination->getContainerUrl(BaseFile::PROTOCOL_AZURE),
             $destination->getFilePath(),
