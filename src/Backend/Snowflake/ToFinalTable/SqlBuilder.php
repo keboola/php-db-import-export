@@ -196,6 +196,7 @@ class SqlBuilder
             }
 
             // for string base type convert null values to empty string ''
+            //phpcs:ignore
             // TODO: coalesce could be skipped in input mapping to workspace for typed and non typed tables https://keboola.atlassian.net/browse/KBC-2886
             if ($columnDefinition->getColumnDefinition()->getBasetype() === BaseType::STRING) {
                 $columnsSetSql[] = sprintf(
