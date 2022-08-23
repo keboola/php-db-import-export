@@ -312,7 +312,77 @@ EOT
 
         self::assertEquals(
         // phpcs:ignore
-            'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2") (SELECT CAST(COALESCE("col1", \'\') AS VARCHAR (4000)) AS "col1",CAST(COALESCE("col2", \'\') AS VARCHAR (4000)) AS "col2" FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
+            'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2") (SELECT COALESCE("col1", \'\') AS "col1",COALESCE("col2", \'\') AS "col2" FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
+            $sql
+        );
+
+        $out = $this->connection->executeStatement($sql);
+        self::assertEquals(4, $out);
+
+        $result = $this->connection->fetchAllAssociative(sprintf(
+            'SELECT * FROM %s',
+            self::TEST_TABLE_IN_SCHEMA
+        ));
+
+        self::assertEqualsCanonicalizing([
+            [
+                'id' => null,
+                'col1' => '1',
+                'col2' => '1',
+            ],
+            [
+                'id' => null,
+                'col1' => '1',
+                'col2' => '1',
+            ],
+            [
+                'id' => null,
+                'col1' => '2',
+                'col2' => '2',
+            ],
+            [
+                'id' => null,
+                'col1' => '',
+                'col2' => '',
+            ],
+        ], $result);
+    }
+
+    public function testGetInsertAllIntoTargetTableCommandSameTables(): void
+    {
+        $this->createTestSchema();
+        $destination = $this->createTestTableWithColumns();
+        $this->createStagingTableWithData(true);
+
+        // create fake stage and say that there is less columns
+        $fakeStage = new SnowflakeTableDefinition(
+            self::TEST_SCHEMA,
+            self::TEST_STAGING_TABLE,
+            true,
+            new ColumnCollection([
+                $this->createNullableGenericColumn('col1'),
+                $this->createNullableGenericColumn('col2'),
+            ]),
+            []
+        );
+
+        // no convert values no timestamp
+        $sql = $this->getBuilder()->getInsertAllIntoTargetTableCommand(
+            $fakeStage,
+            $destination,
+            new SnowflakeImportOptions(
+                [],
+                false,
+                false,
+                0,
+                SnowflakeImportOptions::SAME_TABLES_REQUIRED //<- same tables are required
+            ),
+            '2020-01-01 00:00:00'
+        );
+
+        self::assertEquals(
+        // phpcs:ignore
+            'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2") (SELECT "col1","col2" FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
             $sql
         );
 
@@ -430,7 +500,7 @@ EOT
         );
         self::assertEquals(
         // phpcs:ignore
-            'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2") (SELECT IFF("col1" = \'\', NULL, "col1"),CAST(COALESCE("col2", \'\') AS VARCHAR (4000)) AS "col2" FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
+            'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2") (SELECT IFF("col1" = \'\', NULL, "col1"),COALESCE("col2", \'\') AS "col2" FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
             $sql
         );
         $out = $this->connection->executeStatement($sql);
@@ -492,7 +562,7 @@ EOT
         );
         self::assertEquals(
         // phpcs:ignore
-            'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2", "_timestamp") (SELECT IFF("col1" = \'\', NULL, "col1"),CAST(COALESCE("col2", \'\') AS VARCHAR (4000)) AS "col2",\'2020-01-01 00:00:00\' FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
+            'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2", "_timestamp") (SELECT IFF("col1" = \'\', NULL, "col1"),COALESCE("col2", \'\') AS "col2",\'2020-01-01 00:00:00\' FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
             $sql
         );
         $out = $this->connection->executeStatement($sql);

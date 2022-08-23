@@ -172,6 +172,14 @@ class SqlBuilder
 
         /** @var SnowflakeColumn $columnDefinition */
         foreach ($sourceTableDefinition->getColumnsDefinitions() as $columnDefinition) {
+            // output mapping same tables are required no not convert nulls to empty strings
+            if ($importOptions->isRequireSameTables() === true) {
+                $columnsSetSql[] = SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName());
+                continue;
+            }
+
+            // Input mapping convert empty values to null
+            // empty strings '' are converted to null values
             if (in_array($columnDefinition->getColumnName(), $importOptions->getConvertEmptyValuesToNull(), true)) {
                 // use nullif only for string base type
                 if ($columnDefinition->getColumnDefinition()->getBasetype() === BaseType::STRING) {
@@ -180,26 +188,26 @@ class SqlBuilder
                         SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName()),
                         SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName())
                     );
-                } else {
-                    $columnsSetSql[] = SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName());
+                    continue;
                 }
-            } elseif ($columnDefinition->getColumnDefinition()->getBasetype() === BaseType::STRING) {
-                $columnsSetSql[] = sprintf(
-                    'CAST(COALESCE(%s, \'\') AS %s) AS %s',
-                    SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName()),
-                    $columnDefinition->getColumnDefinition()->getTypeOnlySQLDefinition(),
-                    SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName())
-                );
-            } else {
-                // on columns other than string dont use COALESCE, use direct cast
-                // this will fail if the column is not null, but this is expected
-                $columnsSetSql[] = sprintf(
-                    'CAST(%s AS %s) AS %s',
-                    SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName()),
-                    $columnDefinition->getColumnDefinition()->getTypeOnlySQLDefinition(),
-                    SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName())
-                );
+                // if tables is not typed column could be other than string in this case we skip conversion
+                $columnsSetSql[] = SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName());
+                continue;
             }
+
+            // for string base type convert null values to empty string ''
+            // TODO: coalesce could be skipped in input mapping to workspace for typed and non typed tables https://keboola.atlassian.net/browse/KBC-2886
+            if ($columnDefinition->getColumnDefinition()->getBasetype() === BaseType::STRING) {
+                $columnsSetSql[] = sprintf(
+                    'COALESCE(%s, \'\') AS %s',
+                    SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName()),
+                    SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName())
+                );
+                continue;
+            }
+            // on columns other than string dont use COALESCE
+            // this will fail if the column is not null, but this is expected
+            $columnsSetSql[] = SnowflakeQuote::quoteSingleIdentifier($columnDefinition->getColumnName());
         }
 
         if ($useTimestamp) {
@@ -237,6 +245,14 @@ class SqlBuilder
         $columnsSet = [];
 
         foreach ($stagingTableDefinition->getColumnsNames() as $columnName) {
+            if ($importOptions->isRequireSameTables() === true) {
+                $columnsSet[] = sprintf(
+                    '%s = \'%s\'',
+                    SnowflakeQuote::quoteSingleIdentifier($columnName),
+                    SnowflakeQuote::quoteSingleIdentifier($columnName),
+                );
+                continue;
+            }
             if (in_array($columnName, $importOptions->getConvertEmptyValuesToNull(), true)) {
                 $columnsSet[] = sprintf(
                     '%s = IFF("src".%s = \'\', NULL, "src".%s)',
