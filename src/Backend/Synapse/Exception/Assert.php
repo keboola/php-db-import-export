@@ -6,7 +6,7 @@ namespace Keboola\Db\ImportExport\Backend\Synapse\Exception;
 
 use Exception as InternalException;
 use Keboola\Db\Import\Exception;
-use Keboola\Db\ImportExport\Backend\Helper\Assert as BaseAssert;
+use Keboola\Db\ImportExport\Backend\Assert as BaseAssert;
 use Keboola\Db\ImportExport\Backend\Synapse\DestinationTableOptions;
 use Keboola\Db\ImportExport\Backend\Synapse\SynapseException;
 use Keboola\Db\ImportExport\Backend\Synapse\SynapseImportOptions;
@@ -18,7 +18,6 @@ use Keboola\Db\ImportExport\Storage\SourceInterface;
 use Keboola\Db\ImportExport\Storage\Synapse\Table;
 use Keboola\TableBackendUtils\Column\ColumnCollection;
 use Keboola\TableBackendUtils\Column\SynapseColumn;
-use Keboola\TableBackendUtils\Table\SynapseTableDefinition;
 use LogicException;
 
 final class Assert extends BaseAssert

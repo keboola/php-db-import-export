@@ -89,6 +89,38 @@ class AssertTest extends TestCase
         );
     }
 
+    public function testAssertColumnsOnTableDefinitionNoColumnsFailCaseSensitive(): void
+    {
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage('Columns doest not match. Non existing columns: iD');
+        Assert::assertColumnsOnTableDefinition(
+            new class implements SourceInterface {
+                /** @return string[] */
+                public function getColumnsNames(): array
+                {
+                    return ['iD','NAME'];
+                }
+                /** @return string[]|null */
+                public function getPrimaryKeysNames(): ?array
+                {
+                    return null;
+                }
+            },
+            new SynapseTableDefinition(
+                '',
+                '',
+                true,
+                new ColumnCollection([
+                    SynapseColumn::createGenericColumn('id'),
+                    SynapseColumn::createGenericColumn('name'),
+                ]),
+                [],
+                new TableDistributionDefinition(TableDistributionDefinition::TABLE_DISTRIBUTION_ROUND_ROBIN),
+                new TableIndexDefinition(TableIndexDefinition::TABLE_INDEX_TYPE_HEAP)
+            )
+        );
+    }
+
     public function testAssertColumnsOnTableDefinitionNoColumnsNotMatch(): void
     {
         $this->expectException(Exception::class);

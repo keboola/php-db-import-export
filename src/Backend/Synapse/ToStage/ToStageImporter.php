@@ -42,7 +42,7 @@ final class ToStageImporter implements ToStageImporterInterface
         assert($options instanceof SynapseImportOptions);
         assert($destinationDefinition instanceof SynapseTableDefinition);
         Assert::assertValidSource($source);
-        Assert::assertColumnsOnTableDefinition($source, $destinationDefinition);
+        Assert::assertColumnsOnTableDefinitionCaseInsensitive($source, $destinationDefinition);
         $state = new ImportState($destinationDefinition->getTableName());
 
         $adapter = $this->getAdapter($source, $options);

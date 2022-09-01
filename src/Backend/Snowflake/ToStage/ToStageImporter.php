@@ -6,8 +6,8 @@ namespace Keboola\Db\ImportExport\Backend\Snowflake\ToStage;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception;
+use Keboola\Db\ImportExport\Backend\Assert;
 use Keboola\Db\ImportExport\Backend\CopyAdapterInterface;
-use Keboola\Db\ImportExport\Backend\Helper\Assert;
 use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
