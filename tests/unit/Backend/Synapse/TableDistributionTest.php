@@ -23,7 +23,7 @@ class TableDistributionTest extends TestCase
             TableDistribution::TABLE_DISTRIBUTION_HASH,
             ['pk1']
         );
-        self::assertEquals(['pk1'], $options->getDistributionColumnsNames());
+        self::assertEquals(['PK1'], $options->getDistributionColumnsNames());
         self::assertEquals('HASH', $options->getDistributionName());
         self::assertTrue($options->isHashDistribution());
     }

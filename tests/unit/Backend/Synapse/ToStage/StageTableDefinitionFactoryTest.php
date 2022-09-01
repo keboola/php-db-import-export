@@ -34,11 +34,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             ['id', 'name', 'notInDef']
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         // id is NVARCHAR
@@ -77,11 +77,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             ['id', 'name', 'notInDef']
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         // id is NVARCHAR
@@ -121,11 +121,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             new TableIndexDefinition(TableIndexDefinition::TABLE_INDEX_TYPE_CLUSTERED_COLUMNSTORE_INDEX)
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         // id is NVARCHAR
@@ -167,11 +167,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             new TableIndexDefinition(TableIndexDefinition::TABLE_INDEX_TYPE_CLUSTERED_INDEX, ['id'])
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         // id is NVARCHAR
@@ -193,7 +193,7 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
         );
         // index is CI
         self::assertSame(
-            ['id'],
+            ['ID'],
             $stageDefinition->getTableIndex()->getIndexedColumnsNames()
         );
     }
@@ -217,11 +217,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             ['id', 'name', 'notInDef']
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         self::assertSame(Synapse::TYPE_NVARCHAR, $definitions[0]->getColumnDefinition()->getType());
@@ -258,11 +258,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             ['id', 'name', 'notInDef']
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         self::assertSame(Synapse::TYPE_NVARCHAR, $definitions[0]->getColumnDefinition()->getType());
@@ -300,11 +300,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             new TableIndexDefinition(TableIndexDefinition::TABLE_INDEX_TYPE_CLUSTERED_COLUMNSTORE_INDEX)
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         self::assertSame(Synapse::TYPE_NVARCHAR, $definitions[0]->getColumnDefinition()->getType());
@@ -341,11 +341,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             ['id', 'name', 'notInDef']
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         // id is NVARCHAR
@@ -384,11 +384,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             ['id', 'name', 'notInDef']
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         // id is NVARCHAR
@@ -428,11 +428,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             new TableIndexDefinition(TableIndexDefinition::TABLE_INDEX_TYPE_CLUSTERED_COLUMNSTORE_INDEX)
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         // id is NVARCHAR
@@ -474,11 +474,11 @@ class StageTableDefinitionFactoryTest extends BaseTestCase
             new TableIndexDefinition(TableIndexDefinition::TABLE_INDEX_TYPE_CLUSTERED_INDEX, ['id'])
         );
 
-        self::assertSame('schema', $stageDefinition->getSchemaName());
-        self::assertStringStartsWith('#__temp_csvimport', $stageDefinition->getTableName());
+        self::assertSame('SCHEMA', $stageDefinition->getSchemaName());
+        self::assertStringStartsWith('#__TEMP_CSVIMPORT', $stageDefinition->getTableName());
         self::assertTrue($stageDefinition->isTemporary());
         // order same as source
-        self::assertSame(['id', 'name', 'notInDef'], $stageDefinition->getColumnsNames());
+        self::assertSame(['ID', 'NAME', 'NOTINDEF'], $stageDefinition->getColumnsNames());
         /** @var SynapseColumn[] $definitions */
         $definitions = iterator_to_array($stageDefinition->getColumnsDefinitions());
         // id is NVARCHAR

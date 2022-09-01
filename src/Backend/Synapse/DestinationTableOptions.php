@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Backend\Synapse;
 
+use Keboola\TableBackendUtils\Utils\CaseConverter;
+
 /**
  * @internal
  */
@@ -26,8 +28,8 @@ final class DestinationTableOptions
         array $primaryKeys,
         TableDistribution $distribution
     ) {
-        $this->columnNamesInOrder = $columnNamesInOrder;
-        $this->primaryKeys = $primaryKeys;
+        $this->columnNamesInOrder = CaseConverter::arrayToUpper($columnNamesInOrder);
+        $this->primaryKeys = CaseConverter::arrayToUpper($primaryKeys);
         $this->distribution = $distribution;
     }
 

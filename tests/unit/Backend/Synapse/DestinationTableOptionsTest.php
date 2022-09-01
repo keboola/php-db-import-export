@@ -17,8 +17,8 @@ class DestinationTableOptionsTest extends TestCase
             ['pk1', 'pk1'],
             new TableDistribution()
         );
-        self::assertEquals(['pk1', 'pk1', 'col1', 'col2'], $options->getColumnNamesInOrder());
-        self::assertEquals(['pk1', 'pk1'], $options->getPrimaryKeys());
+        self::assertEquals(['PK1', 'PK1', 'COL1', 'COL2'], $options->getColumnNamesInOrder());
+        self::assertEquals(['PK1', 'PK1'], $options->getPrimaryKeys());
         self::assertEquals('ROUND_ROBIN', $options->getDistribution()->getDistributionName());
         self::assertEquals([], $options->getDistribution()->getDistributionColumnsNames());
     }
@@ -33,9 +33,9 @@ class DestinationTableOptionsTest extends TestCase
                 ['pk1']
             )
         );
-        self::assertEquals(['pk1', 'pk1', 'col1', 'col2'], $options->getColumnNamesInOrder());
-        self::assertEquals(['pk1', 'pk1'], $options->getPrimaryKeys());
+        self::assertEquals(['PK1', 'PK1', 'COL1', 'COL2'], $options->getColumnNamesInOrder());
+        self::assertEquals(['PK1', 'PK1'], $options->getPrimaryKeys());
         self::assertEquals('HASH', $options->getDistribution()->getDistributionName());
-        self::assertEquals(['pk1'], $options->getDistribution()->getDistributionColumnsNames());
+        self::assertEquals(['PK1'], $options->getDistribution()->getDistributionColumnsNames());
     }
 }

@@ -11,6 +11,7 @@ use Keboola\TableBackendUtils\Column\SynapseColumn;
 use Keboola\TableBackendUtils\Table\Synapse\TableDistributionDefinition;
 use Keboola\TableBackendUtils\Table\Synapse\TableIndexDefinition;
 use Keboola\TableBackendUtils\Table\SynapseTableDefinition;
+use Keboola\TableBackendUtils\Utils\CaseConverter;
 
 final class StageTableDefinitionFactory
 {
@@ -23,7 +24,7 @@ final class StageTableDefinitionFactory
         ?TableIndexDefinition $indexDefinition = null
     ): SynapseTableDefinition {
         $clusteredIndexColumns = self::getClusteredIndexColumns($indexDefinition);
-
+        $sourceColumnsNames = CaseConverter::arrayToUpper($sourceColumnsNames);
         $newDefinitions = [];
         // create staging table for source columns in order
         // but with types from destination
@@ -73,6 +74,7 @@ final class StageTableDefinitionFactory
         array $sourceColumnsNames,
         ?TableIndexDefinition $indexDefinition = null
     ): SynapseTableDefinition {
+        $sourceColumnsNames = CaseConverter::arrayToUpper($sourceColumnsNames);
         $newDefinitions = [];
         // create staging table for source columns in order
         // but with types from destination

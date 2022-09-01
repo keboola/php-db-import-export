@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\Synapse;
 
-use Doctrine\DBAL\Platforms\SQLServerPlatform;
 use Keboola\Db\ImportExport\Storage\DestinationInterface;
 use Keboola\Db\ImportExport\Storage\SourceInterface;
 use Keboola\Db\ImportExport\Storage\SqlSourceInterface;
 use Keboola\TableBackendUtils\Escaping\SynapseQuote;
+use Keboola\TableBackendUtils\Utils\CaseConverter;
 
 class Table implements SourceInterface, DestinationInterface, SqlSourceInterface
 {
@@ -34,8 +34,10 @@ class Table implements SourceInterface, DestinationInterface, SqlSourceInterface
     ) {
         $this->schema = $schema;
         $this->tableName = $tableName;
-        $this->columnsNames = $columns;
-        $this->primaryKeysNames = $primaryKeysNames;
+        $this->columnsNames = CaseConverter::arrayToUpper($columns);
+        if ($primaryKeysNames !== null) {
+            $this->primaryKeysNames = CaseConverter::arrayToUpper($primaryKeysNames);
+        }
     }
 
     public function getFromStatement(): string
@@ -55,6 +57,7 @@ class Table implements SourceInterface, DestinationInterface, SqlSourceInterface
     /**
      * Select statement used for CTAS query for output mapping
      * this select also handles type casting to default NVARCHAR used in storage
+     *
      * @param bool $castValues if true each column is casted to default NVARCHAR(4000) used in storage
      */
     public function getFromStatementForStaging(bool $castValues): string

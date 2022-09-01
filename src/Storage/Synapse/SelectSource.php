@@ -7,6 +7,7 @@ namespace Keboola\Db\ImportExport\Storage\Synapse;
 use Doctrine\DBAL\Types\Type;
 use Keboola\Db\ImportExport\Storage\SourceInterface;
 use Keboola\Db\ImportExport\Storage\SqlSourceInterface;
+use Keboola\TableBackendUtils\Utils\CaseConverter;
 
 class SelectSource implements SourceInterface, SqlSourceInterface
 {
@@ -40,8 +41,10 @@ class SelectSource implements SourceInterface, SqlSourceInterface
         $this->query = $query;
         $this->queryBindings = $queryBindings;
         $this->dataTypes = $dataTypes;
-        $this->columnsNames = $columnsNames;
-        $this->primaryKeysNames = $primaryKeysNames;
+        $this->columnsNames = CaseConverter::arrayToUpper($columnsNames);
+        if ($primaryKeysNames !== null) {
+            $this->primaryKeysNames = CaseConverter::arrayToUpper($primaryKeysNames);
+        }
     }
 
     /** @return string[] */

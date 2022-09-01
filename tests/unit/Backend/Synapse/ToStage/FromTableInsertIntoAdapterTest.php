@@ -26,10 +26,10 @@ class FromTableInsertIntoAdapterTest extends BaseTestCase
         $conn = $this->mockConnection();
         $conn->expects($this->once())->method('executeStatement')->with(
         // phpcs:ignore
-            'INSERT INTO [test_schema].[stagingTable] ([col1], [col2]) SELECT [col1], [col2] FROM [test_schema].[test_table]'
+            'INSERT INTO [TEST_SCHEMA].[STAGINGTABLE] ([COL1], [COL2]) SELECT [COL1], [COL2] FROM [test_schema].[test_table]'
         );
         $conn->expects($this->once())->method('fetchOne')
-            ->with('SELECT COUNT_BIG(*) AS [count] FROM [test_schema].[stagingTable]')
+            ->with('SELECT COUNT_BIG(*) AS [count] FROM [TEST_SCHEMA].[STAGINGTABLE]')
             ->willReturn(10);
 
         $destination = new SynapseTableDefinition(
@@ -67,12 +67,12 @@ class FromTableInsertIntoAdapterTest extends BaseTestCase
         $conn = $this->mockConnection();
         $conn->expects($this->once())->method('executeQuery')->with(
         // phpcs:ignore
-            'INSERT INTO [test_schema].[stagingTable] ([col1], [col2]) SELECT * FROM [test_schema].[test_table]',
+            'INSERT INTO [TEST_SCHEMA].[STAGINGTABLE] ([COL1], [COL2]) SELECT * FROM [test_schema].[test_table]',
             ['val'],
             [1]
         );
         $conn->expects($this->once())->method('fetchOne')
-            ->with('SELECT COUNT_BIG(*) AS [count] FROM [test_schema].[stagingTable]')
+            ->with('SELECT COUNT_BIG(*) AS [count] FROM [TEST_SCHEMA].[STAGINGTABLE]')
             ->willReturn(10);
 
         $destination = new SynapseTableDefinition(

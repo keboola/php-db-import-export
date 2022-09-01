@@ -32,7 +32,7 @@ class FromABSCopyIntoAdapterTest extends BaseTestCase
         $conn = $this->mockConnection();
         $conn->expects($this->once())->method('executeStatement')->with(
             <<<EOT
-COPY INTO [schema].[stagingTable]
+COPY INTO [SCHEMA].[STAGINGTABLE]
 FROM 'https://url'
 WITH (
     FILE_TYPE='CSV',
@@ -48,7 +48,7 @@ EOT
         );
 
         $conn->expects($this->once())->method('fetchOne')
-            ->with('SELECT COUNT_BIG(*) AS [count] FROM [schema].[stagingTable]')
+            ->with('SELECT COUNT_BIG(*) AS [count] FROM [SCHEMA].[STAGINGTABLE]')
             ->willReturn(10);
 
         $destination = new SynapseTableDefinition(
@@ -83,7 +83,7 @@ EOT
         $conn = $this->mockConnection();
         $conn->expects($this->once())->method('executeStatement')->with(
             <<<EOT
-COPY INTO [schema].[stagingTable]
+COPY INTO [SCHEMA].[STAGINGTABLE]
 FROM 'https://url'
 WITH (
     FILE_TYPE='CSV',
@@ -99,7 +99,7 @@ EOT
         );
 
         $conn->expects($this->once())->method('fetchOne')
-            ->with('SELECT COUNT_BIG(*) AS [count] FROM [schema].[stagingTable]')
+            ->with('SELECT COUNT_BIG(*) AS [count] FROM [SCHEMA].[STAGINGTABLE]')
             ->willReturn(10);
 
         $destination = new SynapseTableDefinition(
@@ -133,7 +133,7 @@ EOT
         $conn = $this->mockConnection();
         $conn->expects($this->once())->method('executeStatement')->with(
             <<<EOT
-COPY INTO [schema].[stagingTable]
+COPY INTO [SCHEMA].[STAGINGTABLE]
 FROM 'https://url'
 WITH (
     FILE_TYPE='CSV',
@@ -148,7 +148,7 @@ WITH (
 EOT
         );
         $conn->expects($this->once())->method('fetchOne')
-            ->with('SELECT COUNT_BIG(*) AS [count] FROM [schema].[stagingTable]')
+            ->with('SELECT COUNT_BIG(*) AS [count] FROM [SCHEMA].[STAGINGTABLE]')
             ->willReturn(10);
 
         $destination = new SynapseTableDefinition(
@@ -181,7 +181,7 @@ EOT
         $conn = $this->mockConnection();
         $conn->expects($this->once())->method('executeStatement')->with(
             <<<EOT
-COPY INTO [schema].[stagingTable]
+COPY INTO [SCHEMA].[STAGINGTABLE]
 FROM 'https://url'
 WITH (
     FILE_TYPE='CSV',
@@ -197,7 +197,7 @@ EOT
         );
 
         $conn->expects($this->once())->method('fetchOne')
-            ->with('SELECT COUNT_BIG(*) AS [count] FROM [schema].[stagingTable]')
+            ->with('SELECT COUNT_BIG(*) AS [count] FROM [SCHEMA].[STAGINGTABLE]')
             ->willReturn(10);
 
         $destination = new SynapseTableDefinition(

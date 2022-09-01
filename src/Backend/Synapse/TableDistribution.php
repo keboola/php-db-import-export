@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Keboola\Db\ImportExport\Backend\Synapse;
 
 use Keboola\Db\ImportExport\Backend\Synapse\Exception\Assert;
+use Keboola\TableBackendUtils\Utils\CaseConverter;
 
 /**
  * @internal
@@ -32,7 +33,7 @@ final class TableDistribution
         Assert::assertValidHashDistribution($distributionName, $distributionColumnsNames);
 
         $this->distributionName = $distributionName;
-        $this->distributionColumnsNames = $distributionColumnsNames;
+        $this->distributionColumnsNames = CaseConverter::arrayToUpper($distributionColumnsNames);
     }
 
     /**

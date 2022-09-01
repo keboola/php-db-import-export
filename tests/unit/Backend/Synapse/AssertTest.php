@@ -34,7 +34,7 @@ class AssertTest extends TestCase
                 /** @return string[] */
                 public function getColumnsNames(): array
                 {
-                    return ['name', 'id'];
+                    return ['NAME', 'ID'];
                 }
                 /** @return string[]|null */
                 public function getPrimaryKeysNames(): ?array
@@ -92,13 +92,13 @@ class AssertTest extends TestCase
     public function testAssertColumnsOnTableDefinitionNoColumnsNotMatch(): void
     {
         $this->expectException(Exception::class);
-        $this->expectExceptionMessage('Columns doest not match. Non existing columns: unexpected');
+        $this->expectExceptionMessage('Columns doest not match. Non existing columns: UNEXPECTED');
         Assert::assertColumnsOnTableDefinition(
             new class implements SourceInterface {
                 /** @return string[] */
                 public function getColumnsNames(): array
                 {
-                    return ['name', 'id', 'unexpected'];
+                    return ['NAME', 'ID', 'UNEXPECTED'];
                 }
                 /** @return string[]|null */
                 public function getPrimaryKeysNames(): ?array
@@ -129,7 +129,7 @@ class AssertTest extends TestCase
                 /** @return string[] */
                 public function getColumnsNames(): array
                 {
-                    return ['name', 'id'];
+                    return ['NAME', 'ID'];
                 }
                 /** @return string[]|null */
                 public function getPrimaryKeysNames(): ?array
@@ -179,13 +179,13 @@ class AssertTest extends TestCase
     public function testAssertColumnsNotMatch(): void
     {
         $this->expectException(Exception::class);
-        $this->expectExceptionMessage('Columns doest not match. Non existing columns: unexpected');
+        $this->expectExceptionMessage('Columns doest not match. Non existing columns: UNEXPECTED');
         Assert::assertColumns(
             new class implements SourceInterface {
                 /** @return string[] */
                 public function getColumnsNames(): array
                 {
-                    return ['name', 'id', 'unexpected'];
+                    return ['NAME', 'ID', 'UNEXPECTED'];
                 }
 
                 /** @return string[]|null */
@@ -418,7 +418,7 @@ class AssertTest extends TestCase
         ];
 
         $this->expectException(Exception::class);
-        $this->expectExceptionMessage('Source destination columns name mismatch. "test1x"->"test1"');
+        $this->expectExceptionMessage('Source destination columns name mismatch. "TEST1X"->"TEST1"');
         Assert::assertSameColumns(
             new ColumnCollection($sourceCols),
             new ColumnCollection($destCols)
@@ -455,7 +455,7 @@ class AssertTest extends TestCase
         ];
 
         $this->expectException(Exception::class);
-        $this->expectExceptionMessage('Source destination columns mismatch. "test2 TIME(3)"->"test2 DATETIME2(3)"');
+        $this->expectExceptionMessage('Source destination columns mismatch. "TEST2 TIME(3)"->"TEST2 DATETIME2(3)"');
         Assert::assertSameColumns(
             new ColumnCollection($sourceCols),
             new ColumnCollection($destCols)
@@ -492,7 +492,7 @@ class AssertTest extends TestCase
         ];
 
         $this->expectException(Exception::class);
-        $this->expectExceptionMessage('Source destination columns mismatch. "test2 TIME(3)"->"test2 TIME(4)"');
+        $this->expectExceptionMessage('Source destination columns mismatch. "TEST2 TIME(3)"->"TEST2 TIME(4)"');
         Assert::assertSameColumns(
             new ColumnCollection($sourceCols),
             new ColumnCollection($destCols)
