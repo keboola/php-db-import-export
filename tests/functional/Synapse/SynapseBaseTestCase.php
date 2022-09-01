@@ -23,6 +23,7 @@ use Keboola\TableBackendUtils\Table\Synapse\TableDistributionDefinition;
 use Keboola\TableBackendUtils\Table\Synapse\TableIndexDefinition;
 use Keboola\TableBackendUtils\Table\SynapseTableDefinition;
 use Keboola\TableBackendUtils\Table\SynapseTableReflection;
+use Keboola\TableBackendUtils\Utils\CaseConverter;
 use Tests\Keboola\Db\ImportExportFunctional\ImportExportBaseTest;
 
 class SynapseBaseTestCase extends ImportExportBaseTest
@@ -306,14 +307,14 @@ EOT
         ))->getColumnsNames();
 
         if ($options->useTimestamp()) {
-            $this->assertContains('_timestamp', $tableColumns);
+            $this->assertContains('_TIMESTAMP', $tableColumns);
         } else {
-            $this->assertNotContains('_timestamp', $tableColumns);
+            $this->assertNotContains('_TIMESTAMP', $tableColumns);
         }
 
-        if (!in_array('_timestamp', $source->getColumnsNames())) {
+        if (!in_array('_TIMESTAMP', $source->getColumnsNames())) {
             $tableColumns = array_filter($tableColumns, function ($column) {
-                return $column !== '_timestamp';
+                return $column !== '_TIMESTAMP';
             });
         }
 
@@ -399,14 +400,14 @@ EOT
         ))->getColumnsNames();
 
         if ($options->useTimestamp()) {
-            self::assertContains('_timestamp', $tableColumns);
+            self::assertContains('_TIMESTAMP', $tableColumns);
         } else {
-            self::assertNotContains('_timestamp', $tableColumns);
+            self::assertNotContains('_TIMESTAMP', $tableColumns);
         }
 
-        if (!in_array('_timestamp', $source->getColumnsNames())) {
+        if (!in_array('_TIMESTAMP', CaseConverter::arrayToUpper($source->getColumnsNames()))) {
             $tableColumns = array_filter($tableColumns, function ($column) {
-                return $column !== '_timestamp';
+                return $column !== '_TIMESTAMP';
             });
         }
 
@@ -449,9 +450,9 @@ EOT
         $tableColumns = $destRef->getColumnsNames();
 
         if ($options->useTimestamp()) {
-            self::assertContains('_timestamp', $tableColumns);
+            self::assertContains('_TIMESTAMP', $tableColumns);
         } else {
-            self::assertNotContains('_timestamp', $tableColumns);
+            self::assertNotContains('_TIMESTAMP', $tableColumns);
         }
 
         self::assertEquals($expectedCount, $destRef->getRowsCount(), $message);

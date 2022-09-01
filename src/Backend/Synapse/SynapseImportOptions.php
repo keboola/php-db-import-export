@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Keboola\Db\ImportExport\Backend\Synapse;
 
 use Keboola\Db\ImportExport\ImportOptions;
+use Keboola\TableBackendUtils\Utils\CaseConverter;
 
 class SynapseImportOptions extends ImportOptions
 {
@@ -49,7 +50,7 @@ class SynapseImportOptions extends ImportOptions
         string $tableToTableAdapter = self::TABLE_TO_TABLE_ADAPTER_INSERT_INTO
     ) {
         parent::__construct(
-            $convertEmptyValuesToNull,
+            CaseConverter::arrayToUpper($convertEmptyValuesToNull),
             $isIncremental,
             $useTimestamp,
             $numberOfIgnoredLines

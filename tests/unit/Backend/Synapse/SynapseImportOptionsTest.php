@@ -32,7 +32,7 @@ class SynapseImportOptionsTest extends TestCase
             SynapseImportOptions::TABLE_TYPES_CAST
         );
 
-        self::assertSame(['col1'], $options->getConvertEmptyValuesToNull());
+        self::assertSame(['COL1'], $options->getConvertEmptyValuesToNull());
         self::assertTrue($options->isIncremental());
         self::assertTrue($options->useTimestamp());
         self::assertTrue($options->getCastValueTypes());

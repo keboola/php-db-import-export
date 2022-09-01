@@ -138,8 +138,8 @@ class StageImportTest extends SynapseBaseTestCase
         );
         $this->expectException(Exception::class);
         $this->expectExceptionCode(Exception::COLUMNS_COUNT_NOT_MATCH);
-        $this->expectExceptionMessage('first');
-        $this->expectExceptionMessage('second');
+        $this->expectExceptionMessage('FIRST');
+        $this->expectExceptionMessage('SECOND');
         $importer->importToStagingTable(
             $source,
             StageTableDefinitionFactory::createStagingTableDefinition(
@@ -305,7 +305,7 @@ class StageImportTest extends SynapseBaseTestCase
         $this->expectException(Exception::class);
         $this->expectExceptionMessage(
         // phpcs:ignore
-            'Tables don\'t have same number of columns. Source columns: "col1,col2", Destination columns: "col1,col2,invalidCol"'
+            'Tables don\'t have same number of columns. Source columns: "COL1,COL2", Destination columns: "COL1,COL2,INVALIDCOL"'
         );
         $importer->importToStagingTable(
             $source,
@@ -357,7 +357,7 @@ class StageImportTest extends SynapseBaseTestCase
 
         $this->expectException(Exception::class);
         $this->expectExceptionMessage(
-            'Source destination columns mismatch. "numCol NVARCHAR(4000) NOT NULL"->"numCol DECIMAL(10,1)"'
+            'Source destination columns mismatch. "NUMCOL NVARCHAR(4000) NOT NULL"->"NUMCOL DECIMAL(10,1)"'
         );
         $importer->importToStagingTable(
             $source,

@@ -13,6 +13,7 @@ use Keboola\TableBackendUtils\Column\SynapseColumn;
 use Keboola\TableBackendUtils\Escaping\SynapseQuote;
 use Keboola\TableBackendUtils\Table\Synapse\TableIndexDefinition;
 use Keboola\TableBackendUtils\Table\SynapseTableDefinition;
+use Keboola\TableBackendUtils\Utils\CaseConverter;
 
 class SqlBuilder
 {
@@ -95,7 +96,7 @@ class SqlBuilder
 
         $columnsInOrder = $destinationTableDefinition->getColumnsNames();
         $timestampColIndex = array_search(
-            ToStageImporterInterface::TIMESTAMP_COLUMN_NAME,
+            CaseConverter::stringToUpper(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME),
             $columnsInOrder,
             true
         );
@@ -105,14 +106,14 @@ class SqlBuilder
         }
 
         $timestampNotInColumns = !in_array(
-            ToStageImporterInterface::TIMESTAMP_COLUMN_NAME,
+            CaseConverter::stringToUpper(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME),
             $stagingTableDefinition->getColumnsNames(),
             true
         );
         $useTimestamp = $timestampNotInColumns && $importOptions->useTimestamp();
 
         if ($useTimestamp) {
-            $columnsInOrder[] = ToStageImporterInterface::TIMESTAMP_COLUMN_NAME;
+            $columnsInOrder[] = CaseConverter::stringToUpper(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME);
         }
         $createTableColumns = $this->getColumnsString($columnsInOrder, ',', 'a');
 
@@ -127,7 +128,9 @@ class SqlBuilder
                 'CAST(%s as %s) AS %s',
                 SynapseQuote::quote($timestamp),
                 Synapse::TYPE_DATETIME2,
-                SynapseQuote::quoteSingleIdentifier(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME)
+                SynapseQuote::quoteSingleIdentifier(
+                    CaseConverter::stringToUpper(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME)
+                )
             );
         }
 
@@ -260,13 +263,17 @@ class SqlBuilder
         );
 
         $insColumns = $sourceTableDefinition->getColumnsNames();
-        $useTimestamp = !in_array(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME, $insColumns, true)
-            && $importOptions->useTimestamp();
+        $containsTimestamp = in_array(
+            CaseConverter::stringToUpper(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME),
+            $insColumns,
+            true
+        );
+        $useTimestamp = !$containsTimestamp && $importOptions->useTimestamp();
 
         if ($useTimestamp) {
             $insColumns = array_merge(
                 $sourceTableDefinition->getColumnsNames(),
-                [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME]
+                [CaseConverter::stringToUpper(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME)]
             );
         }
 
@@ -330,7 +337,7 @@ class SqlBuilder
         );
 
         $useTimestamp = !in_array(
-            ToStageImporterInterface::TIMESTAMP_COLUMN_NAME,
+            CaseConverter::stringToUpper(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME),
             $sourceTableDefinition->getColumnsNames(),
             true
         ) && $importOptions->useTimestamp();
@@ -343,9 +350,10 @@ class SqlBuilder
 
         if ($useTimestamp) {
             $columnsSetSql[] = sprintf(
-                '%s AS %s',
+                'CAST(%s AS %s) AS %s',
                 SynapseQuote::quote($timestamp),
-                ToStageImporterInterface::TIMESTAMP_COLUMN_NAME
+                Synapse::TYPE_DATETIME2,
+                CaseConverter::stringToUpper(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME)
             );
         }
 
@@ -480,7 +488,9 @@ class SqlBuilder
         if ($importOptions->useTimestamp()) {
             $columnsSet[] = sprintf(
                 '%s = \'%s\'',
-                SynapseQuote::quoteSingleIdentifier(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME),
+                SynapseQuote::quoteSingleIdentifier(
+                    CaseConverter::stringToUpper(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME)
+                ),
                 $timestamp
             );
         }
@@ -563,33 +573,11 @@ class SqlBuilder
         /** @var SynapseColumn $column */
         foreach ($sourceTableDefinition->getColumnsDefinitions() as $column) {
             $destinationColumn = null;
-            // case sensitive search
             /** @var SynapseColumn $col */
             foreach ($destinationTableDefinition->getColumnsDefinitions() as $col) {
                 if ($col->getColumnName() === $column->getColumnName()) {
                     $destinationColumn = $col;
                     break;
-                }
-            }
-            if ($destinationColumn === null) {
-                // case insensitive search
-                /** @var SynapseColumn $col */
-                foreach ($destinationTableDefinition->getColumnsDefinitions() as $col) {
-                    if (strtolower($col->getColumnName()) === strtolower($column->getColumnName())) {
-                        if ($destinationColumn !== null) {
-                            throw new Exception(
-                                sprintf(
-                                    // phpcs:ignore
-                                    'Multiple columns "%s, %s" exists with same name but non exactly match expected "%s".',
-                                    $destinationColumn->getColumnName(),
-                                    $col->getColumnName(),
-                                    $column->getColumnName()
-                                ),
-                                Exception::UNKNOWN_ERROR
-                            );
-                        }
-                        $destinationColumn = $col;
-                    }
                 }
             }
             if ($destinationColumn === null) {

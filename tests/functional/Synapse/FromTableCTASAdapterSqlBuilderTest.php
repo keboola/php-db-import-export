@@ -94,7 +94,7 @@ class FromTableCTASAdapterSqlBuilderTest extends SynapseBaseTestCase
             ),
             'requireSameTables' => SynapseImportOptions::SAME_TABLES_REQUIRED,
             // phpcs:ignore
-            'expectedSql' => 'CREATE TABLE [destination].[dest] WITH (DISTRIBUTION = ROUND_ROBIN,HEAP) AS SELECT [pk1], [pk2], [col1], [col2] FROM [source].[source]',
+            'expectedSql' => 'CREATE TABLE [DESTINATION].[DEST] WITH (DISTRIBUTION = ROUND_ROBIN,HEAP) AS SELECT [PK1], [PK2], [COL1], [COL2] FROM [SOURCE].[SOURCE]',
         ];
 
         yield 'simple no casting custom index and distribution (typed tables but varchar)' => [
@@ -116,7 +116,7 @@ class FromTableCTASAdapterSqlBuilderTest extends SynapseBaseTestCase
             ),
             'requireSameTables' => SynapseImportOptions::SAME_TABLES_REQUIRED,
             // phpcs:ignore
-            'expectedSql' => 'CREATE TABLE [destination].[dest] WITH (DISTRIBUTION = HASH([pk1]),CLUSTERED INDEX([pk1])) AS SELECT [pk1], [pk2], [col1], [col2] FROM [source].[source]',
+            'expectedSql' => 'CREATE TABLE [DESTINATION].[DEST] WITH (DISTRIBUTION = HASH([PK1]),CLUSTERED INDEX([PK1])) AS SELECT [PK1], [PK2], [COL1], [COL2] FROM [SOURCE].[SOURCE]',
         ];
 
         yield 'simple with casting (not typed tables but varchar)' => [
@@ -128,7 +128,7 @@ class FromTableCTASAdapterSqlBuilderTest extends SynapseBaseTestCase
             ),
             'requireSameTables' => SynapseImportOptions::SAME_TABLES_NOT_REQUIRED,
             // phpcs:ignore
-            'expectedSql' => 'CREATE TABLE [destination].[dest] WITH (DISTRIBUTION = ROUND_ROBIN,HEAP) AS SELECT a.[pk1], a.[pk2], a.[col1], a.[col2] FROM (SELECT CAST([pk1] as NVARCHAR(4000)) AS [pk1], CAST([pk2] as NVARCHAR(4000)) AS [pk2], CAST([col1] as NVARCHAR(4000)) AS [col1], CAST([col2] as NVARCHAR(4000)) AS [col2] FROM [source].[source]) AS a',
+            'expectedSql' => 'CREATE TABLE [DESTINATION].[DEST] WITH (DISTRIBUTION = ROUND_ROBIN,HEAP) AS SELECT a.[PK1], a.[PK2], a.[COL1], a.[COL2] FROM (SELECT CAST([PK1] as NVARCHAR(4000)) AS [PK1], CAST([PK2] as NVARCHAR(4000)) AS [PK2], CAST([COL1] as NVARCHAR(4000)) AS [COL1], CAST([COL2] as NVARCHAR(4000)) AS [COL2] FROM [SOURCE].[SOURCE]) AS a',
         ];
 
         $pk1 = new SynapseColumn('pk1', new Synapse(
@@ -160,7 +160,7 @@ class FromTableCTASAdapterSqlBuilderTest extends SynapseBaseTestCase
             ),
             'requireSameTables' => SynapseImportOptions::SAME_TABLES_REQUIRED,
             // phpcs:ignore
-            'expectedSql' => 'CREATE TABLE [destination].[dest] WITH (DISTRIBUTION = ROUND_ROBIN,HEAP) AS SELECT [pk1], [pk2], [col1], [col2] FROM [source].[source]',
+            'expectedSql' => 'CREATE TABLE [DESTINATION].[DEST] WITH (DISTRIBUTION = ROUND_ROBIN,HEAP) AS SELECT [PK1], [PK2], [COL1], [COL2] FROM [SOURCE].[SOURCE]',
         ];
 
         yield 'typed casting (not typed tables with types)' => [
@@ -177,7 +177,7 @@ class FromTableCTASAdapterSqlBuilderTest extends SynapseBaseTestCase
             ),
             'requireSameTables' => SynapseImportOptions::SAME_TABLES_NOT_REQUIRED,
             // phpcs:ignore
-            'expectedSql' => 'CREATE TABLE [destination].[dest] WITH (DISTRIBUTION = ROUND_ROBIN,HEAP) AS SELECT a.[pk1], a.[pk2], a.[col1], a.[col2] FROM (SELECT CAST([pk1] as NVARCHAR(4000)) AS [pk1], CAST([pk2] as NVARCHAR(4000)) AS [pk2], CAST([col1] as NVARCHAR(4000)) AS [col1], CAST([col2] as NVARCHAR(4000)) AS [col2] FROM [source].[source]) AS a',
+            'expectedSql' => 'CREATE TABLE [DESTINATION].[DEST] WITH (DISTRIBUTION = ROUND_ROBIN,HEAP) AS SELECT a.[PK1], a.[PK2], a.[COL1], a.[COL2] FROM (SELECT CAST([PK1] as NVARCHAR(4000)) AS [PK1], CAST([PK2] as NVARCHAR(4000)) AS [PK2], CAST([COL1] as NVARCHAR(4000)) AS [COL1], CAST([COL2] as NVARCHAR(4000)) AS [COL2] FROM [SOURCE].[SOURCE]) AS a',
         ];
     }
 

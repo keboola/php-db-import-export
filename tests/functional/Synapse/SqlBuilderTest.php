@@ -21,6 +21,7 @@ use Keboola\TableBackendUtils\Table\SynapseTableDefinition;
 use Keboola\TableBackendUtils\Table\SynapseTableQueryBuilder;
 use Keboola\TableBackendUtils\Table\SynapseTableReflection;
 use Keboola\TableBackendUtils\TableNotExistsReflectionException;
+use Keboola\TableBackendUtils\Utils\CaseConverter;
 
 class SqlBuilderTest extends SynapseBaseTestCase
 {
@@ -83,7 +84,7 @@ class SqlBuilderTest extends SynapseBaseTestCase
         );
         self::assertEquals(
         // phpcs:ignore
-            'INSERT INTO [import-export-test-ng_schema].[#tempTable] ([col1], [col2]) SELECT a.[col1],a.[col2] FROM (SELECT [col1], [col2], ROW_NUMBER() OVER (PARTITION BY [pk1],[pk2] ORDER BY [pk1],[pk2]) AS "_row_number_" FROM [import-export-test-ng_schema].[#stagingTable]) AS a WHERE a."_row_number_" = 1',
+            'INSERT INTO [IMPORT-EXPORT-TEST-NG_SCHEMA].[#TEMPTABLE] ([COL1], [COL2]) SELECT a.[COL1],a.[COL2] FROM (SELECT [COL1], [COL2], ROW_NUMBER() OVER (PARTITION BY [PK1],[PK2] ORDER BY [PK1],[PK2]) AS "_row_number_" FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]) AS a WHERE a."_row_number_" = 1',
             $sql
         );
         $this->connection->exec($sql);
@@ -219,7 +220,7 @@ class SqlBuilderTest extends SynapseBaseTestCase
 
         $this->assertEquals(
         // phpcs:ignore
-            'DELETE [import-export-test-ng_schema].[#stagingTable] WHERE EXISTS (SELECT * FROM [import-export-test-ng_schema].[import-export-test-ng_test] WHERE [import-export-test-ng_schema].[import-export-test-ng_test].[pk1] = [import-export-test-ng_schema].[#stagingTable].[pk1] AND [import-export-test-ng_schema].[import-export-test-ng_test].[pk2] = [import-export-test-ng_schema].[#stagingTable].[pk2])',
+            'DELETE [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE] WHERE EXISTS (SELECT * FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WHERE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[PK1] = [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE].[PK1] AND [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[PK2] = [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE].[PK2])',
             $sql
         );
         $this->connection->exec($sql);
@@ -232,10 +233,10 @@ class SqlBuilderTest extends SynapseBaseTestCase
         $this->assertCount(1, $result);
         $this->assertSame([
             [
-                'pk1' => '2',
-                'pk2' => '1',
-                'col1' => '1',
-                'col2' => '1',
+                'PK1' => '2',
+                'PK2' => '1',
+                'COL1' => '1',
+                'COL2' => '1',
             ],
         ], $result);
     }
@@ -266,7 +267,11 @@ class SqlBuilderTest extends SynapseBaseTestCase
                 $tableName
             ));
         } catch (TableNotExistsReflectionException $e) {
-            $this->assertEquals(sprintf('Table "%s.%s" does not exist.', $schemaName, $tableName), $e->getMessage());
+            $this->assertEquals(sprintf(
+                'Table "%s.%s" does not exist.',
+                CaseConverter::stringToUpper($schemaName),
+                CaseConverter::stringToUpper($tableName)
+            ), $e->getMessage());
         }
     }
 
@@ -345,7 +350,7 @@ EOT
 
         $this->assertEquals(
         // phpcs:ignore
-            'INSERT INTO [import-export-test-ng_schema].[import-export-test-ng_test] ([col1], [col2]) (SELECT CAST(COALESCE([col1], \'\') as NVARCHAR(4000)) AS [col1],CAST(COALESCE([col2], \'\') as NVARCHAR(4000)) AS [col2] FROM [import-export-test-ng_schema].[#stagingTable] AS [src])',
+            'INSERT INTO [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] ([COL1], [COL2]) (SELECT CAST(COALESCE([COL1], \'\') as NVARCHAR(4000)) AS [COL1],CAST(COALESCE([COL2], \'\') as NVARCHAR(4000)) AS [COL2] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE] AS [src])',
             $sql
         );
 
@@ -418,7 +423,7 @@ EOT
 
         $this->assertEquals(
         // phpcs:ignore
-            'INSERT INTO [import-export-test-ng_schema].[import-export-test-ng_test] ([col1], [col2]) (SELECT CAST(COALESCE([col1], \'\') as NVARCHAR(4000)) AS [col1],CAST([col2] as NUMERIC) AS [col2] FROM [import-export-test-ng_schema].[#stagingTable] AS [src])',
+            'INSERT INTO [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] ([COL1], [COL2]) (SELECT CAST(COALESCE([COL1], \'\') as NVARCHAR(4000)) AS [COL1],CAST([COL2] as NUMERIC) AS [COL2] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE] AS [src])',
             $sql
         );
 
@@ -516,7 +521,7 @@ EOT
         );
         $this->assertEquals(
         // phpcs:ignore
-            'INSERT INTO [import-export-test-ng_schema].[import-export-test-ng_test] ([col1], [col2]) (SELECT NULLIF([col1], \'\'),CAST(COALESCE([col2], \'\') as NVARCHAR(4000)) AS [col2] FROM [import-export-test-ng_schema].[#stagingTable] AS [src])',
+            'INSERT INTO [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] ([COL1], [COL2]) (SELECT NULLIF([COL1], \'\'),CAST(COALESCE([COL2], \'\') as NVARCHAR(4000)) AS [COL2] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE] AS [src])',
             $sql
         );
         $out = $this->connection->exec($sql);
@@ -580,7 +585,7 @@ EOT
         );
         $this->assertEquals(
         // phpcs:ignore
-            'INSERT INTO [import-export-test-ng_schema].[import-export-test-ng_test] ([col1], [col2], [_timestamp]) (SELECT NULLIF([col1], \'\'),CAST(COALESCE([col2], \'\') as NVARCHAR(4000)) AS [col2],\'2020-01-01 00:00:00\' FROM [import-export-test-ng_schema].[#stagingTable] AS [src])',
+            'INSERT INTO [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] ([COL1], [COL2], [_TIMESTAMP]) (SELECT NULLIF([COL1], \'\'),CAST(COALESCE([COL2], \'\') as NVARCHAR(4000)) AS [COL2],\'2020-01-01 00:00:00\' FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE] AS [src])',
             $sql
         );
         $out = $this->connection->exec($sql);
@@ -592,10 +597,10 @@ EOT
         ));
 
         foreach ($result as $item) {
-            $this->assertArrayHasKey('id', $item);
-            $this->assertArrayHasKey('col1', $item);
-            $this->assertArrayHasKey('col2', $item);
-            $this->assertArrayHasKey('_timestamp', $item);
+            $this->assertArrayHasKey('ID', $item);
+            $this->assertArrayHasKey('COL1', $item);
+            $this->assertArrayHasKey('COL2', $item);
+            $this->assertArrayHasKey('_TIMESTAMP', $item);
         }
     }
 
@@ -682,9 +687,9 @@ EOT
 
         $this->assertEquals([
             [
-                'id' => '1',
-                'col1' => '2',
-                'col2' => '1',
+                'ID' => '1',
+                'COL1' => '2',
+                'COL2' => '1',
             ],
         ], $result);
 
@@ -697,7 +702,7 @@ EOT
         );
         $this->assertEquals(
         // phpcs:ignore
-            'UPDATE [import-export-test-ng_schema].[import-export-test-ng_test] SET [col2] = COALESCE([src].[col2], \'\') FROM [import-export-test-ng_schema].[#stagingTable] AS [src] WHERE [import-export-test-ng_schema].[import-export-test-ng_test].[col1] = [src].[col1] AND (COALESCE(CAST([import-export-test-ng_schema].[import-export-test-ng_test].[col2] AS NVARCHAR(4000)), \'\') != COALESCE([src].[col2], \'\')) ',
+            'UPDATE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] SET [COL2] = COALESCE([src].[COL2], \'\') FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE] AS [src] WHERE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[COL1] = [src].[COL1] AND (COALESCE(CAST([IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[COL2] AS NVARCHAR(4000)), \'\') != COALESCE([src].[COL2], \'\')) ',
             $sql
         );
         $this->connection->exec($sql);
@@ -709,9 +714,9 @@ EOT
 
         $this->assertEquals([
             [
-                'id' => '1',
-                'col1' => '2',
-                'col2' => '2',
+                'ID' => '1',
+                'COL1' => '2',
+                'COL2' => '2',
             ],
         ], $result);
     }
@@ -805,9 +810,9 @@ EOT
 
         $this->assertEquals([
             [
-                'id' => '1',
-                'col1' => '2',
-                'col2' => '1',
+                'ID' => '1',
+                'COL1' => '2',
+                'COL2' => '1',
             ],
         ], $result);
 
@@ -820,7 +825,7 @@ EOT
         );
         $this->assertEquals(
         // phpcs:ignore
-            'UPDATE [import-export-test-ng_schema].[import-export-test-ng_test] SET [col2] = [src].[col2] FROM [import-export-test-ng_schema].[#stagingTable] AS [src] WHERE [import-export-test-ng_schema].[import-export-test-ng_test].[col1] = [src].[col1] AND (CAST([import-export-test-ng_schema].[import-export-test-ng_test].[col2] AS NUMERIC) != [src].[col2]) ',
+            'UPDATE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] SET [COL2] = [src].[COL2] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE] AS [src] WHERE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[COL1] = [src].[COL1] AND (CAST([IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[COL2] AS NUMERIC) != [src].[COL2]) ',
             $sql
         );
         $this->connection->exec($sql);
@@ -832,9 +837,9 @@ EOT
 
         $this->assertEquals([
             [
-                'id' => '1',
-                'col1' => '2',
-                'col2' => '2',
+                'ID' => '1',
+                'COL1' => '2',
+                'COL2' => '2',
             ],
         ], $result);
     }
@@ -913,7 +918,7 @@ EOT
         );
         $this->assertEquals(
         // phpcs:ignore
-            'UPDATE [import-export-test-ng_schema].[import-export-test-ng_test] SET [col2] = COALESCE([src].[col2], \'\') FROM [import-export-test-ng_schema].[#stagingTable] AS [src] WHERE [import-export-test-ng_schema].[import-export-test-ng_test].[col1] = [src].[col1] AND (COALESCE(CAST([import-export-test-ng_schema].[import-export-test-ng_test].[col2] AS NVARCHAR(4000)), \'\') != COALESCE([src].[col2], \'\')) ',
+            'UPDATE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] SET [COL2] = COALESCE([src].[COL2], \'\') FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE] AS [src] WHERE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[COL1] = [src].[COL1] AND (COALESCE(CAST([IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[COL2] AS NVARCHAR(4000)), \'\') != COALESCE([src].[COL2], \'\')) ',
             $sql
         );
         $this->connection->exec($sql);
@@ -1018,7 +1023,7 @@ EOT
 
         $this->assertEquals(
         // phpcs:ignore
-            'UPDATE [import-export-test-ng_schema].[import-export-test-ng_test] SET [col2] = COALESCE([src].[col2], \'\'), [_timestamp] = \'2020-01-01 01:01:01.000\' FROM [import-export-test-ng_schema].[#stagingTable] AS [src] WHERE [import-export-test-ng_schema].[import-export-test-ng_test].[col1] = [src].[col1] AND (COALESCE(CAST([import-export-test-ng_schema].[import-export-test-ng_test].[col2] AS NVARCHAR(4000)), \'\') != COALESCE([src].[col2], \'\')) ',
+            'UPDATE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] SET [COL2] = COALESCE([src].[COL2], \'\'), [_TIMESTAMP] = \'2020-01-01 01:01:01.000\' FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE] AS [src] WHERE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[COL1] = [src].[COL1] AND (COALESCE(CAST([IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[COL2] AS NVARCHAR(4000)), \'\') != COALESCE([src].[COL2], \'\')) ',
             $sql
         );
         $this->connection->exec($sql);
@@ -1029,13 +1034,13 @@ EOT
         ));
 
         foreach ($result as $item) {
-            $this->assertArrayHasKey('id', $item);
-            $this->assertArrayHasKey('col1', $item);
-            $this->assertArrayHasKey('col2', $item);
-            $this->assertArrayHasKey('_timestamp', $item);
+            $this->assertArrayHasKey('ID', $item);
+            $this->assertArrayHasKey('COL1', $item);
+            $this->assertArrayHasKey('COL2', $item);
+            $this->assertArrayHasKey('_TIMESTAMP', $item);
             $this->assertSame(
                 $timestampSet->format(DateTimeHelper::FORMAT),
-                (new DateTime($item['_timestamp']))->format(DateTimeHelper::FORMAT)
+                (new DateTime($item['_TIMESTAMP']))->format(DateTimeHelper::FORMAT)
             );
         }
     }
@@ -1146,7 +1151,7 @@ EOT
 
         $this->assertEquals(
         // phpcs:ignore
-            'UPDATE [import-export-test-ng_schema].[import-export-test-ng_test] SET [_timestamp] = \'2020-01-01 01:01:01.000\' FROM [import-export-test-ng_schema].[#stagingTable] AS [src] WHERE [import-export-test-ng_schema].[import-export-test-ng_test].[id] = [src].[id] ',
+            'UPDATE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] SET [_TIMESTAMP] = \'2020-01-01 01:01:01.000\' FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE] AS [src] WHERE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST].[ID] = [src].[ID] ',
             $sql
         );
         $this->connection->executeStatement($sql);
@@ -1156,13 +1161,13 @@ EOT
             self::TEST_TABLE_IN_SCHEMA
         ));
 
-        /** @var array{id:string,_timestamp:string} $item */
+        /** @var array{ID:string,_TIMESTAMP:string} $item */
         foreach ($result as $item) {
-            $this->assertArrayHasKey('id', $item);
-            $this->assertArrayHasKey('_timestamp', $item);
+            $this->assertArrayHasKey('ID', $item);
+            $this->assertArrayHasKey('_TIMESTAMP', $item);
             $this->assertSame(
                 $timestampSet->format(DateTimeHelper::FORMAT),
-                (new DateTime($item['_timestamp']))->format(DateTimeHelper::FORMAT)
+                (new DateTime($item['_TIMESTAMP']))->format(DateTimeHelper::FORMAT)
             );
         }
     }
@@ -1234,51 +1239,7 @@ EOT
 
         $this->expectException(Exception::class);
         $this->expectExceptionMessage(
-            'Columns "pk2" can be imported as it was not found between columns "pk1, notExists" of destination table.'
-        );
-        $this->getBuilder()->$function(
-            $stage,
-            $destination,
-            new SynapseImportOptions(),
-            '2020-01-01 00:00:00'
-        );
-    }
-
-    /**
-     * @dataProvider ctasFunctionsProvider
-     */
-    public function testCtasCommandFailOnMultipleColumns(string $function): void
-    {
-        $stage = new SynapseTableDefinition(
-            self::TEST_SCHEMA,
-            self::TEST_STAGING_TABLE,
-            true,
-            new ColumnCollection([
-                $this->createGenericColumn('pk1'),
-                $this->createGenericColumn('pk2'),
-            ]),
-            [],
-            new TableDistributionDefinition(TableDistributionDefinition::TABLE_DISTRIBUTION_ROUND_ROBIN),
-            new TableIndexDefinition(TableIndexDefinition::TABLE_INDEX_TYPE_HEAP)
-        );
-
-        $destination = new SynapseTableDefinition(
-            'schema',
-            'tableDest',
-            false,
-            new ColumnCollection([
-                $this->createGenericColumn('pk1'),
-                $this->createGenericColumn('PK2'),
-                $this->createGenericColumn('Pk2'),
-            ]),
-            ['pk1'],
-            $stage->getTableDistribution(),
-            $stage->getTableIndex()
-        );
-
-        $this->expectException(Exception::class);
-        $this->expectExceptionMessage(
-            'Multiple columns "PK2, Pk2" exists with same name but non exactly match expected "pk2".'
+            'Columns "PK2" can be imported as it was not found between columns "PK1, NOTEXISTS" of destination table.'
         );
         $this->getBuilder()->$function(
             $stage,
@@ -1320,14 +1281,14 @@ EOT
         ));
 
         foreach ($result as $item) {
-            $this->assertArrayHasKey('pk1', $item);
-            $this->assertArrayHasKey('pk2', $item);
-            $this->assertArrayHasKey('col1', $item);
-            $this->assertArrayHasKey('col2', $item);
+            $this->assertArrayHasKey('PK1', $item);
+            $this->assertArrayHasKey('PK2', $item);
+            $this->assertArrayHasKey('COL1', $item);
+            $this->assertArrayHasKey('COL2', $item);
             if ($isTimestampExpected) {
-                $this->assertArrayHasKey('_timestamp', $item);
+                $this->assertArrayHasKey('_TIMESTAMP', $item);
             } else {
-                $this->assertArrayNotHasKey('_timestamp', $item);
+                $this->assertArrayNotHasKey('_TIMESTAMP', $item);
             }
         }
 
@@ -1340,7 +1301,7 @@ EOT
         $timestampColumns = array_filter(iterator_to_array($ref->getColumnsDefinitions()), function (
             SynapseColumn $column
         ) {
-            return $column->getColumnName() === '_timestamp';
+            return $column->getColumnName() === '_TIMESTAMP';
         });
         if ($options->useTimestamp()) {
             self::assertCount(1, $timestampColumns);
@@ -1404,7 +1365,7 @@ EOT
                 SynapseImportOptions::TABLE_TYPES_CAST
             ),
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[pk1],a.[pk2],a.[col1],a.[col2],a.[_timestamp] FROM (SELECT COALESCE(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1],COALESCE(CAST([pk2] as NVARCHAR(4000)), \'\') AS [pk2],COALESCE(CAST([col1] as NVARCHAR(4000)), \'\') AS [col1],COALESCE(CAST([col2] as NVARCHAR(4000)), \'\') AS [col2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_timestamp], ROW_NUMBER() OVER (PARTITION BY [pk1],[pk2] ORDER BY [pk1],[pk2]) AS "_row_number_" FROM [import-export-test-ng_schema].[#stagingTable]) AS a WHERE a."_row_number_" = 1',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[PK1],a.[PK2],a.[COL1],a.[COL2],a.[_TIMESTAMP] FROM (SELECT COALESCE(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1],COALESCE(CAST([PK2] as NVARCHAR(4000)), \'\') AS [PK2],COALESCE(CAST([COL1] as NVARCHAR(4000)), \'\') AS [COL1],COALESCE(CAST([COL2] as NVARCHAR(4000)), \'\') AS [COL2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_TIMESTAMP], ROW_NUMBER() OVER (PARTITION BY [PK1],[PK2] ORDER BY [PK1],[PK2]) AS "_row_number_" FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]) AS a WHERE a."_row_number_" = 1',
         ];
 
         yield 'testGetCtasDedupCommandWithNotStringTypeNotNullable' => [
@@ -1450,7 +1411,7 @@ EOT
                 SynapseImportOptions::TABLE_TYPES_CAST
             ),
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[pk1],a.[pk2],a.[col1],a.[col2],a.[_timestamp] FROM (SELECT COALESCE(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1],COALESCE(CAST([pk2] as NVARCHAR(4000)), \'\') AS [pk2],COALESCE(CAST([col1] as NVARCHAR(4000)), \'\') AS [col1],ISNULL(CAST([col2] as NVARCHAR(4000)), \'\') AS [col2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_timestamp], ROW_NUMBER() OVER (PARTITION BY [pk1],[pk2] ORDER BY [pk1],[pk2]) AS "_row_number_" FROM [import-export-test-ng_schema].[#stagingTable]) AS a WHERE a."_row_number_" = 1',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[PK1],a.[PK2],a.[COL1],a.[COL2],a.[_TIMESTAMP] FROM (SELECT COALESCE(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1],COALESCE(CAST([PK2] as NVARCHAR(4000)), \'\') AS [PK2],COALESCE(CAST([COL1] as NVARCHAR(4000)), \'\') AS [COL1],ISNULL(CAST([COL2] as NVARCHAR(4000)), \'\') AS [COL2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_TIMESTAMP], ROW_NUMBER() OVER (PARTITION BY [PK1],[PK2] ORDER BY [PK1],[PK2]) AS "_row_number_" FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]) AS a WHERE a."_row_number_" = 1',
         ];
 
         yield 'testGetCtasDedupCommandWithHashDistribution' => [
@@ -1473,7 +1434,7 @@ EOT
                 SynapseImportOptions::TABLE_TYPES_CAST // cast values
             ),
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=HASH([pk1]),HEAP) AS SELECT a.[pk1],a.[pk2],a.[col1],a.[col2],a.[_timestamp] FROM (SELECT COALESCE(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1],COALESCE(CAST([pk2] as NVARCHAR(4000)), \'\') AS [pk2],CAST(NULLIF([col1], \'\') as NVARCHAR(4000)) AS [col1],COALESCE(CAST([col2] as NVARCHAR(4000)), \'\') AS [col2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_timestamp], ROW_NUMBER() OVER (PARTITION BY [pk1],[pk2] ORDER BY [pk1],[pk2]) AS "_row_number_" FROM [import-export-test-ng_schema].[#stagingTable]) AS a WHERE a."_row_number_" = 1',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=HASH([PK1]),HEAP) AS SELECT a.[PK1],a.[PK2],a.[COL1],a.[COL2],a.[_TIMESTAMP] FROM (SELECT COALESCE(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1],COALESCE(CAST([PK2] as NVARCHAR(4000)), \'\') AS [PK2],CAST(NULLIF([COL1], \'\') as NVARCHAR(4000)) AS [COL1],COALESCE(CAST([COL2] as NVARCHAR(4000)), \'\') AS [COL2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_TIMESTAMP], ROW_NUMBER() OVER (PARTITION BY [PK1],[PK2] ORDER BY [PK1],[PK2]) AS "_row_number_" FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]) AS a WHERE a."_row_number_" = 1'
         ];
 
         yield 'testGetCtasDedupCommandWithHashDistributionNoCasting' => [
@@ -1497,7 +1458,7 @@ EOT
                 SynapseImportOptions::TABLE_TYPES_PRESERVE // dont cast values
             ),
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=HASH([pk1]),HEAP) AS SELECT a.[pk1],a.[pk2],a.[col1],a.[col2],a.[_timestamp] FROM (SELECT COALESCE([pk1], \'\') AS [pk1],COALESCE([pk2], \'\') AS [pk2],NULLIF([col1], \'\') AS [col1],COALESCE([col2], \'\') AS [col2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_timestamp], ROW_NUMBER() OVER (PARTITION BY [pk1],[pk2] ORDER BY [pk1],[pk2]) AS "_row_number_" FROM [import-export-test-ng_schema].[#stagingTable]) AS a WHERE a."_row_number_" = 1',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=HASH([PK1]),HEAP) AS SELECT a.[PK1],a.[PK2],a.[COL1],a.[COL2],a.[_TIMESTAMP] FROM (SELECT COALESCE([PK1], \'\') AS [PK1],COALESCE([PK2], \'\') AS [PK2],NULLIF([COL1], \'\') AS [COL1],COALESCE([COL2], \'\') AS [COL2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_TIMESTAMP], ROW_NUMBER() OVER (PARTITION BY [PK1],[PK2] ORDER BY [PK1],[PK2]) AS "_row_number_" FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]) AS a WHERE a."_row_number_" = 1',
         ];
 
         yield 'testGetCtasDedupCommandWithTimestampNullConvert' => [
@@ -1520,7 +1481,7 @@ EOT
                 SynapseImportOptions::TABLE_TYPES_CAST // cast values
             ),
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[pk1],a.[pk2],a.[col1],a.[col2],a.[_timestamp] FROM (SELECT COALESCE(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1],COALESCE(CAST([pk2] as NVARCHAR(4000)), \'\') AS [pk2],CAST(NULLIF([col1], \'\') as NVARCHAR(4000)) AS [col1],COALESCE(CAST([col2] as NVARCHAR(4000)), \'\') AS [col2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_timestamp], ROW_NUMBER() OVER (PARTITION BY [pk1],[pk2] ORDER BY [pk1],[pk2]) AS "_row_number_" FROM [import-export-test-ng_schema].[#stagingTable]) AS a WHERE a."_row_number_" = 1',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[PK1],a.[PK2],a.[COL1],a.[COL2],a.[_TIMESTAMP] FROM (SELECT COALESCE(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1],COALESCE(CAST([PK2] as NVARCHAR(4000)), \'\') AS [PK2],CAST(NULLIF([COL1], \'\') as NVARCHAR(4000)) AS [COL1],COALESCE(CAST([COL2] as NVARCHAR(4000)), \'\') AS [COL2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_TIMESTAMP], ROW_NUMBER() OVER (PARTITION BY [PK1],[PK2] ORDER BY [PK1],[PK2]) AS "_row_number_" FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]) AS a WHERE a."_row_number_" = 1',
         ];
 
         yield 'testGetCtasDedupCommandWithTimestampNullConvertNoCasting' => [
@@ -1543,7 +1504,7 @@ EOT
                 SynapseImportOptions::TABLE_TYPES_PRESERVE // don't cast values
             ),
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[pk1],a.[pk2],a.[col1],a.[col2],a.[_timestamp] FROM (SELECT COALESCE([pk1], \'\') AS [pk1],COALESCE([pk2], \'\') AS [pk2],NULLIF([col1], \'\') AS [col1],COALESCE([col2], \'\') AS [col2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_timestamp], ROW_NUMBER() OVER (PARTITION BY [pk1],[pk2] ORDER BY [pk1],[pk2]) AS "_row_number_" FROM [import-export-test-ng_schema].[#stagingTable]) AS a WHERE a."_row_number_" = 1',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[PK1],a.[PK2],a.[COL1],a.[COL2],a.[_TIMESTAMP] FROM (SELECT COALESCE([PK1], \'\') AS [PK1],COALESCE([PK2], \'\') AS [PK2],NULLIF([COL1], \'\') AS [COL1],COALESCE([COL2], \'\') AS [COL2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_TIMESTAMP], ROW_NUMBER() OVER (PARTITION BY [PK1],[PK2] ORDER BY [PK1],[PK2]) AS "_row_number_" FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]) AS a WHERE a."_row_number_" = 1',
         ];
 
         yield 'testGetCtasDedupCommandNoTimestampNullConvert' => [
@@ -1566,7 +1527,7 @@ EOT
                 SynapseImportOptions::TABLE_TYPES_CAST
             ),
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[pk1],a.[pk2],a.[col1],a.[col2] FROM (SELECT COALESCE(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1],COALESCE(CAST([pk2] as NVARCHAR(4000)), \'\') AS [pk2],CAST(NULLIF([col1], \'\') as NVARCHAR(4000)) AS [col1],COALESCE(CAST([col2] as NVARCHAR(4000)), \'\') AS [col2], ROW_NUMBER() OVER (PARTITION BY [pk1],[pk2] ORDER BY [pk1],[pk2]) AS "_row_number_" FROM [import-export-test-ng_schema].[#stagingTable]) AS a WHERE a."_row_number_" = 1',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[PK1],a.[PK2],a.[COL1],a.[COL2] FROM (SELECT COALESCE(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1],COALESCE(CAST([PK2] as NVARCHAR(4000)), \'\') AS [PK2],CAST(NULLIF([COL1], \'\') as NVARCHAR(4000)) AS [COL1],COALESCE(CAST([COL2] as NVARCHAR(4000)), \'\') AS [COL2], ROW_NUMBER() OVER (PARTITION BY [PK1],[PK2] ORDER BY [PK1],[PK2]) AS "_row_number_" FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]) AS a WHERE a."_row_number_" = 1',
             false,
         ];
 
@@ -1590,7 +1551,7 @@ EOT
                 SynapseImportOptions::TABLE_TYPES_PRESERVE // don't cast
             ),
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[pk1],a.[pk2],a.[col1],a.[col2] FROM (SELECT COALESCE([pk1], \'\') AS [pk1],COALESCE([pk2], \'\') AS [pk2],NULLIF([col1], \'\') AS [col1],COALESCE([col2], \'\') AS [col2], ROW_NUMBER() OVER (PARTITION BY [pk1],[pk2] ORDER BY [pk1],[pk2]) AS "_row_number_" FROM [import-export-test-ng_schema].[#stagingTable]) AS a WHERE a."_row_number_" = 1',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[PK1],a.[PK2],a.[COL1],a.[COL2] FROM (SELECT COALESCE([PK1], \'\') AS [PK1],COALESCE([PK2], \'\') AS [PK2],NULLIF([COL1], \'\') AS [COL1],COALESCE([COL2], \'\') AS [COL2], ROW_NUMBER() OVER (PARTITION BY [PK1],[PK2] ORDER BY [PK1],[PK2]) AS "_row_number_" FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]) AS a WHERE a."_row_number_" = 1',
             false,
         ];
 
@@ -1618,7 +1579,7 @@ EOT
                 SynapseImportOptions::TABLE_TYPES_CAST
             ),
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[pk1],a.[pk2],a.[col1],a.[col2],a.[_timestamp] FROM (SELECT COALESCE(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1],COALESCE(CAST([pk2] as NVARCHAR(4000)), \'\') AS [pk2],COALESCE(CAST([col1] as NVARCHAR(4000)), \'\') AS [col1],COALESCE(CAST([col2] as NVARCHAR(4000)), \'\') AS [col2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_timestamp], ROW_NUMBER() OVER (PARTITION BY [pk1],[pk2] ORDER BY [pk1],[pk2]) AS "_row_number_" FROM [import-export-test-ng_schema].[#stagingTable]) AS a WHERE a."_row_number_" = 1',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,HEAP) AS SELECT a.[PK1],a.[PK2],a.[COL1],a.[COL2],a.[_TIMESTAMP] FROM (SELECT COALESCE(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1],COALESCE(CAST([PK2] as NVARCHAR(4000)), \'\') AS [PK2],COALESCE(CAST([COL1] as NVARCHAR(4000)), \'\') AS [COL1],COALESCE(CAST([COL2] as NVARCHAR(4000)), \'\') AS [COL2],CAST(\'2020-01-01 00:00:00\' as DATETIME2) AS [_TIMESTAMP], ROW_NUMBER() OVER (PARTITION BY [PK1],[PK2] ORDER BY [PK1],[PK2]) AS "_row_number_" FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]) AS a WHERE a."_row_number_" = 1',
         ];
     }
 
@@ -1648,12 +1609,12 @@ EOT
         yield 'no type casting' => [
             SynapseImportOptions::TABLE_TYPES_PRESERVE,
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT COALESCE([col1], \'\') AS [col1],COALESCE([col2], \'\') AS [col2],ISNULL([pk1], \'\') AS [pk1] FROM [import-export-test-ng_schema].[#stagingTable]',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT COALESCE([COL1], \'\') AS [COL1],COALESCE([COL2], \'\') AS [COL2],ISNULL([PK1], \'\') AS [PK1] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]',
         ];
         yield 'type casting' => [
             SynapseImportOptions::TABLE_TYPES_CAST,
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT COALESCE(CAST([col1] as NVARCHAR(4000)), \'\') AS [col1],COALESCE(CAST([col2] as NVARCHAR(4000)), \'\') AS [col2],ISNULL(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1] FROM [import-export-test-ng_schema].[#stagingTable]',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT COALESCE(CAST([COL1] as NVARCHAR(4000)), \'\') AS [COL1],COALESCE(CAST([COL2] as NVARCHAR(4000)), \'\') AS [COL2],ISNULL(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]',
         ];
     }
 
@@ -1757,12 +1718,12 @@ EOT
         yield 'no type casting' => [
             SynapseImportOptions::TABLE_TYPES_PRESERVE,
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT COALESCE([col1], \'\') AS [col1],[col2] AS [col2],ISNULL([pk1], \'\') AS [pk1] FROM [import-export-test-ng_schema].[#stagingTable]',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT COALESCE([COL1], \'\') AS [COL1],[COL2] AS [COL2],ISNULL([PK1], \'\') AS [PK1] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]',
         ];
         yield 'type casting' => [
             SynapseImportOptions::TABLE_TYPES_CAST,
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT COALESCE(CAST([col1] as NVARCHAR(4000)), \'\') AS [col1],CAST([col2] as NUMERIC(18,0)) AS [col2],ISNULL(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1] FROM [import-export-test-ng_schema].[#stagingTable]',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT COALESCE(CAST([COL1] as NVARCHAR(4000)), \'\') AS [COL1],CAST([COL2] as NUMERIC(18,0)) AS [COL2],ISNULL(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]',
         ];
     }
 
@@ -1876,12 +1837,12 @@ EOT
         yield 'no type casting' => [
             SynapseImportOptions::TABLE_TYPES_PRESERVE,
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT NULLIF([col1], \'\') AS [col1],COALESCE([col2], \'\') AS [col2],ISNULL([pk1], \'\') AS [pk1] FROM [import-export-test-ng_schema].[#stagingTable]',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT NULLIF([COL1], \'\') AS [COL1],COALESCE([COL2], \'\') AS [COL2],ISNULL([PK1], \'\') AS [PK1] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]',
         ];
         yield 'type casting' => [
             SynapseImportOptions::TABLE_TYPES_CAST,
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT CAST(NULLIF([col1], \'\') as NVARCHAR(4000)) AS [col1],COALESCE(CAST([col2] as NVARCHAR(4000)), \'\') AS [col2],ISNULL(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1] FROM [import-export-test-ng_schema].[#stagingTable]',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT CAST(NULLIF([COL1], \'\') as NVARCHAR(4000)) AS [COL1],COALESCE(CAST([COL2] as NVARCHAR(4000)), \'\') AS [COL2],ISNULL(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]',
         ];
     }
 
@@ -1981,12 +1942,12 @@ EOT
         yield 'no type casting' => [
             SynapseImportOptions::TABLE_TYPES_PRESERVE,
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT NULLIF([col1], \'\') AS [col1],COALESCE([col2], \'\') AS [col2],ISNULL([pk1], \'\') AS [pk1],\'2020-01-01 00:00:00\' AS _timestamp FROM [import-export-test-ng_schema].[#stagingTable]',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT NULLIF([COL1], \'\') AS [COL1],COALESCE([COL2], \'\') AS [COL2],ISNULL([PK1], \'\') AS [PK1],CAST(\'2020-01-01 00:00:00\' AS DATETIME2) AS _TIMESTAMP FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]',
         ];
         yield 'type casting' => [
             SynapseImportOptions::TABLE_TYPES_CAST,
             // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT CAST(NULLIF([col1], \'\') as NVARCHAR(4000)) AS [col1],COALESCE(CAST([col2] as NVARCHAR(4000)), \'\') AS [col2],ISNULL(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1],\'2020-01-01 00:00:00\' AS _timestamp FROM [import-export-test-ng_schema].[#stagingTable]',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT CAST(NULLIF([COL1], \'\') as NVARCHAR(4000)) AS [COL1],COALESCE(CAST([COL2] as NVARCHAR(4000)), \'\') AS [COL2],ISNULL(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1],CAST(\'2020-01-01 00:00:00\' AS DATETIME2) AS _TIMESTAMP FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]',
         ];
     }
 
@@ -2049,9 +2010,9 @@ EOT
         ));
 
         foreach ($result as $item) {
-            $this->assertArrayHasKey('col1', $item);
-            $this->assertArrayHasKey('col2', $item);
-            $this->assertArrayHasKey('_timestamp', $item);
+            $this->assertArrayHasKey('COL1', $item);
+            $this->assertArrayHasKey('COL2', $item);
+            $this->assertArrayHasKey('_TIMESTAMP', $item);
         }
 
         $ref = new SynapseTableReflection(
@@ -2225,7 +2186,7 @@ EOT
         );
         $this->assertEquals(
         // phpcs:ignore
-            'CREATE TABLE [import-export-test-ng_schema].[import-export-test-ng_test] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT CAST([colNumericNull] as NUMERIC(18,0)) AS [colNumericNull],CAST([colNumeric] as NUMERIC(18,0)) AS [colNumeric],CAST([colInteger] as INT) AS [colInteger],CAST([colFloat] as FLOAT) AS [colFloat],CAST([colBool] as BIT) AS [colBool],CAST([colDate] as DATE) AS [colDate],CAST([colTimestamp] as DATETIME2(7)) AS [colTimestamp],COALESCE(CAST([pk1] as NVARCHAR(4000)), \'\') AS [pk1] FROM [import-export-test-ng_schema].[#stagingTable]',
+            'CREATE TABLE [IMPORT-EXPORT-TEST-NG_SCHEMA].[IMPORT-EXPORT-TEST-NG_TEST] WITH (DISTRIBUTION=ROUND_ROBIN,CLUSTERED COLUMNSTORE INDEX) AS SELECT CAST([COLNUMERICNULL] as NUMERIC(18,0)) AS [COLNUMERICNULL],CAST([COLNUMERIC] as NUMERIC(18,0)) AS [COLNUMERIC],CAST([COLINTEGER] as INT) AS [COLINTEGER],CAST([COLFLOAT] as FLOAT) AS [COLFLOAT],CAST([COLBOOL] as BIT) AS [COLBOOL],CAST([COLDATE] as DATE) AS [COLDATE],CAST([COLTIMESTAMP] as DATETIME2(7)) AS [COLTIMESTAMP],COALESCE(CAST([PK1] as NVARCHAR(4000)), \'\') AS [PK1] FROM [IMPORT-EXPORT-TEST-NG_SCHEMA].[#STAGINGTABLE]',
             $sql
         );
         $out = $this->connection->executeStatement($sql);
@@ -2357,7 +2318,8 @@ EOT
     ): void {
         /** @var SynapseColumn $resultCol */
         foreach ($resultColumns as $resultCol) {
-            if ($resultCol->getColumnName() === ToStageImporterInterface::TIMESTAMP_COLUMN_NAME) {
+            $timestampUpper = CaseConverter::stringToUpper(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME);
+            if ($resultCol->getColumnName() === $timestampUpper) {
                 continue;
             }
             $expectedCol = null;
