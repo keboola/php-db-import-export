@@ -13,7 +13,7 @@
         "keboola/php-datatypes": "^6.0",
         "keboola/php-file-storage-utils": ">=0.2",
         "keboola/php-temp": "^1.0",
-        "keboola/table-backend-utils": "^1",
+        "keboola/table-backend-utils": "dev-zajca-kbc-2902 as 1.5",
         "microsoft/azure-storage-blob": "^1.4",
         "symfony/process": "^4.4|^5.0"
     },
