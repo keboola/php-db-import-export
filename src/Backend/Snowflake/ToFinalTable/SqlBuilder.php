@@ -6,6 +6,8 @@ namespace Keboola\Db\ImportExport\Backend\Snowflake\ToFinalTable;
 
 use Keboola\Datatype\Definition\BaseType;
 use Keboola\Datatype\Definition\Snowflake;
+use Keboola\Db\ImportExport\Backend\Helper\QueryTemplate;
+use Keboola\Db\ImportExport\Backend\Helper\QueryTemplateCollection;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\QuoteHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
@@ -23,12 +25,20 @@ class SqlBuilder
 
     public function getBeginTransaction(): string
     {
-        return 'BEGIN TRANSACTION';
+        $query = new QueryTemplate(
+            'BEGIN TRANSACTION'
+        );
+        QueryTemplateCollection::add($query, 'begin transaction');
+        return $query->toSql();
     }
 
     public function getCommitTransaction(): string
     {
-        return 'COMMIT';
+        $query = new QueryTemplate(
+            'COMMIT'
+        );
+        QueryTemplateCollection::add($query, 'begin transaction');
+        return $query->toSql();
     }
 
     /**
@@ -229,26 +239,37 @@ class SqlBuilder
             $columnsSetSql[] = SnowflakeQuote::quote($timestamp);
         }
 
-        return sprintf(
-            'INSERT INTO %s (%s) (SELECT %s FROM %s.%s AS %s)',
-            $destinationTable,
-            $this->getColumnsString($insColumns),
-            implode(',', $columnsSetSql),
-            SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
-            SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
-            SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS)
+        $query = new QueryTemplate(
+            'INSERT INTO :destinationTable (:insertColumns) (SELECT :selectColumns FROM :sourceSchema.:sourceTable AS :sourceAlias)'
         );
+        $query->setParams([
+            'destinationTable' => $destinationTable,
+            'insertColumns' => $this->getColumnsString($insColumns),
+            'selectColumns' => implode(',', $columnsSetSql),
+            'sourceSchema' => SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
+            'sourceTable' => SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
+            'sourceAlias' => SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+        ]);
+        QueryTemplateCollection::add(
+            $query,
+            'insert all into target table',
+        );
+        return $query->toSql();
     }
 
     public function getTruncateTable(
         string $schema,
         string $tableName
     ): string {
-        return sprintf(
-            'TRUNCATE TABLE %s.%s',
-            SnowflakeQuote::quoteSingleIdentifier($schema),
-            SnowflakeQuote::quoteSingleIdentifier($tableName)
+        $query = new QueryTemplate(
+            'TRUNCATE TABLE :schema.:table'
         );
+        $query->setParams([
+            'schema' => SnowflakeQuote::quoteSingleIdentifier($schema),
+            'table' => SnowflakeQuote::quoteSingleIdentifier($tableName),
+        ]);
+        QueryTemplateCollection::add($query, 'truncate table');
+        return $query->toSql();
     }
 
     public function getUpdateWithPkCommand(

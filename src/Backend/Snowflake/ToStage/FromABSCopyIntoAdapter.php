@@ -6,6 +6,8 @@ namespace Keboola\Db\ImportExport\Backend\Snowflake\ToStage;
 
 use Doctrine\DBAL\Connection;
 use Keboola\Db\ImportExport\Backend\CopyAdapterInterface;
+use Keboola\Db\ImportExport\Backend\Helper\QueryTemplate;
+use Keboola\Db\ImportExport\Backend\Helper\QueryTemplateCollection;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\CopyCommandCsvOptionsHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\QuoteHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeException;
@@ -88,24 +90,28 @@ class FromABSCopyIntoAdapter implements CopyAdapterInterface
             $files
         );
 
-        return sprintf(
-            'COPY INTO %s.%s 
-FROM %s
-CREDENTIALS=(AZURE_SAS_TOKEN=\'%s\')
-FILE_FORMAT = (TYPE=CSV %s)
-FILES = (%s)',
-            SnowflakeQuote::quoteSingleIdentifier($destination->getSchemaName()),
-            SnowflakeQuote::quoteSingleIdentifier($destination->getTableName()),
-            QuoteHelper::quote($source->getContainerUrl(BaseFile::PROTOCOL_AZURE)),
-            $source->getSasToken(),
-            implode(
+        $query = new QueryTemplate(
+            'COPY INTO :schema.:table
+FROM :url
+CREDENTIALS=(AZURE_SAS_TOKEN=\':token\')
+FILE_FORMAT = (TYPE=CSV :format)
+FILES = (:files)'
+        );
+        $query->setParams([
+            'schema' => SnowflakeQuote::quoteSingleIdentifier($destination->getSchemaName()),
+            'table' => SnowflakeQuote::quoteSingleIdentifier($destination->getTableName()),
+            'url' => QuoteHelper::quote($source->getContainerUrl(BaseFile::PROTOCOL_AZURE)),
+            'token' => $source->getSasToken(),
+            'format' => implode(
                 ' ',
                 CopyCommandCsvOptionsHelper::getCsvCopyCommandOptions(
                     $importOptions,
                     $source->getCsvOptions()
                 )
             ),
-            implode(', ', $quotedFiles)
-        );
+            'files' => implode(', ', $quotedFiles)
+        ]);
+        QueryTemplateCollection::add($query, 'copy from ABS into Snowflake');
+        return $query->toSql();
     }
 }

@@ -8,6 +8,7 @@ use Generator;
 use Keboola\Csv\CsvFile;
 use Keboola\CsvOptions\CsvOptions;
 use Keboola\Db\Import\Exception;
+use Keboola\Db\ImportExport\Backend\Helper\QueryTemplateCollection;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToFinalTable\FullImporter;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToFinalTable\SqlBuilder;
@@ -93,6 +94,7 @@ class FullImportTest extends SnowflakeBaseTestCase
 
     public function testLoadToFinalTableWithoutDedup(): void
     {
+        QueryTemplateCollection::clear();
         $this->initTable(self::TABLE_COLUMN_NAME_ROW_NUMBER);
 
         // skipping header
@@ -137,6 +139,10 @@ class FullImportTest extends SnowflakeBaseTestCase
         );
 
         self::assertEquals(2, $destinationRef->getRowsCount());
+
+        dump(QueryTemplateCollection::getAll());
+        // zkusime naivni replace...
+        dump(QueryTemplateCollection::getAll()[0]['template']->replaceParams());
     }
 
     public function testLoadToTableWithDedupWithSinglePK(): void

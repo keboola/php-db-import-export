@@ -8,6 +8,7 @@ use Doctrine\DBAL\Exception;
 use Generator;
 use Keboola\CsvOptions\CsvOptions;
 use Keboola\Db\Import\Exception as LegacyImportException;
+use Keboola\Db\ImportExport\Backend\Helper\QueryTemplateCollection;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToStage\StageTableDefinitionFactory;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToStage\ToStageImporter;
 use Keboola\Db\ImportExport\Storage\FileNotFoundException;
@@ -65,6 +66,8 @@ class StageImportFileTest extends SnowflakeBaseTestCase
         }
         $this->initTable($table);
 
+        QueryTemplateCollection::clear();
+
         $importer = new ToStageImporter($this->connection);
         $ref = new SnowflakeTableReflection(
             $this->connection,
@@ -101,6 +104,8 @@ class StageImportFileTest extends SnowflakeBaseTestCase
         );
         self::assertCount($expectedNumberOfRows, $importedData);
         self::assertCount($expectedFirstLineLength, $importedData[0]);
+
+        dump(QueryTemplateCollection::getAll());
     }
 
     /**
