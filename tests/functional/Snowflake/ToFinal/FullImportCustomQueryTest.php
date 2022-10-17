@@ -295,6 +295,7 @@ class FullImportCustomQueryTest extends SnowflakeBaseTestCase
     {
         // 'foo'  = identifier
         // '#foo' = value
+        // '/foo' = identifier with prefix in value - need to be found first in query
         $sourceCol1Name = uniqid('sourceCol1');
         $destCol1Name = uniqid('destColumn1');
         $params = [
@@ -319,6 +320,8 @@ class FullImportCustomQueryTest extends SnowflakeBaseTestCase
             'stagePrimaryKeys' => [
                 'sourceCol1' => $sourceCol1Name,
             ],
+            // dedup table (prefix)
+            '/stageDeduplicationTableName' => '__temp_DEDUP_',
 
             'destSchemaName' => uniqid('destSchemaName'),
             'destTableName' => uniqid('destTableName'),
@@ -490,6 +493,10 @@ class FullImportCustomQueryTest extends SnowflakeBaseTestCase
             COPY INTO "stageSchemaName6336e8dda7606"."stageTableName6336e8dda7607"
             FROM 'sourceContainerUrl6336ebdee0b80'
         SQL;
+        $dedupQuery = <<<SQL
+            COPY INTO "stageSchemaName6336e8dda7606"."__temp_DEDUP_csvimport6336e8dda7607"
+            FROM 'sourceContainerUrl6336ebdee0b80'
+        SQL;
 
         return [
             'test id' => [
@@ -536,6 +543,20 @@ class FullImportCustomQueryTest extends SnowflakeBaseTestCase
                     FROM [sourceContainerUrl]
                 SQL
             ],
+            'test generated id' => [
+                $dedupQuery,
+                '/stageDeduplicationTableName',
+                '__temp_DEDUP_',
+                '{{ ',
+                ' }}',
+                <<<SQL
+                    COPY INTO "stageSchemaName6336e8dda7606".{{ id(stageDeduplicationTableName) }}
+                    FROM 'sourceContainerUrl6336ebdee0b80'
+                SQL,
+            ],
+        ];
+    }
+
     /**
      * Try to replace params back...
      */
@@ -563,6 +584,14 @@ class FullImportCustomQueryTest extends SnowflakeBaseTestCase
             // replace values
             $valueInQuery = SnowflakeQuote::quote($valueInQuery);
             $keyInOutput = substr($keyInOutput, 1);
+        } elseif (strpos($keyInOutput, '/') === 0) {
+            // replace generated identifiers
+            $matches = [];
+            if (preg_match('/\b('.$valueInQuery.'\w+)\b/', $query, $matches) === 1) {
+                $valueInQuery = SnowflakeQuote::quoteSingleIdentifier($matches[1]);
+                $keyInOutput = substr($keyInOutput, 1);
+                $keyInOutput = sprintf('id(%s)', $keyInOutput);
+            }
         } else {
             // replace identifiers
             $valueInQuery = SnowflakeQuote::quoteSingleIdentifier($valueInQuery);
