@@ -4,34 +4,37 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportFunctional\Snowflake\ToFinal;
 
-use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
 use Keboola\CsvOptions\CsvOptions;
-use Keboola\Datatype\Definition\Snowflake;
-use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
-use Keboola\Db\ImportExport\Backend\Snowflake\ToFinalTable\FullImporter;
-use Keboola\Db\ImportExport\Backend\Snowflake\ToStage\ToStageImporter;
+use Keboola\Datatype\Definition\Synapse;
+use Keboola\Db\ImportExport\Backend\Synapse\SynapseImportOptions;
+use Keboola\Db\ImportExport\Backend\Synapse\ToFinalTable\FullImporter;
+use Keboola\Db\ImportExport\Backend\Synapse\ToStage\ToStageImporter;
 use Keboola\Db\ImportExport\Storage;
 use Keboola\Db\ImportExport\Utils\FakeDriver\FakeConnection;
 use Keboola\Db\ImportExport\Utils\FakeDriver\FakeConnectionFactory;
 use Keboola\TableBackendUtils\Column\ColumnCollection;
 use Keboola\TableBackendUtils\Column\ColumnInterface;
-use Keboola\TableBackendUtils\Column\Snowflake\SnowflakeColumn;
-use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableDefinition;
-use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableQueryBuilder;
-use PHPUnit\Framework\TestCase;
-use Tests\Keboola\Db\ImportExportFunctional\Snowflake\SnowflakeBaseTestCase;
+use Keboola\TableBackendUtils\Column\SynapseColumn;
+use Keboola\TableBackendUtils\Table\Synapse\TableDistributionDefinition;
+use Keboola\TableBackendUtils\Table\Synapse\TableIndexDefinition;
+use Keboola\TableBackendUtils\Table\SynapseTableDefinition;
+use Keboola\TableBackendUtils\Table\SynapseTableQueryBuilder;
+use Tests\Keboola\Db\ImportExportFunctional\Synapse\SynapseBaseTestCase;
 
-class FullImportCustomQueryFakeTest extends SnowflakeBaseTestCase
+class FullImportCustomQueryFakeTest extends SynapseBaseTestCase
 {
+
     protected function setUp(): void
-    {}
+    {
+    }
 
     protected function tearDown(): void
-    {}
+    {
+    }
 
     public function testLoadFromAbsToFinalTableWithoutDedup(): void
     {
+        $sourceCol1 = uniqid('sourceCol1');
         $params = [
             'sourceFiles' => [
                 'sourceFile1' => uniqid('sourceFile1'),
@@ -42,22 +45,22 @@ class FullImportCustomQueryFakeTest extends SnowflakeBaseTestCase
             'stageSchemaName' => uniqid('stageSchemaName'),
             'stageTableName' => uniqid('__temp_stageTableName'),
             'stageColumns' => [
-                'sourceCol1' => new SnowflakeColumn(
-                    uniqid('sourceCol1'),
-                    new Snowflake(Snowflake::TYPE_INT)
+                'sourceCol1' => new \Keboola\TableBackendUtils\Column\SynapseColumn(
+                    $sourceCol1,
+                    new Synapse(Synapse::TYPE_INT)
                 ),
             ],
 
             'destSchemaName' => uniqid('destSchemaName'),
             'destTableName' => uniqid('destTableName'),
             'destColumns' => [
-                'destCol1' => new SnowflakeColumn(
-                    uniqid('destColumn1'),
-                    new Snowflake(Snowflake::TYPE_INT)
+                'destCol1' => new SynapseColumn(
+                    $sourceCol1,
+                    new Synapse(Synapse::TYPE_INT)
                 ),
-                'destColTimestamp' => new SnowflakeColumn(
+                'destColTimestamp' => new SynapseColumn(
                     uniqid('_timestamp'),
-                    new Snowflake(Snowflake::TYPE_TIMESTAMP)
+                    new Synapse(Synapse::TYPE_DATETIME2)
                 ),
             ],
         ];
@@ -83,27 +86,32 @@ class FullImportCustomQueryFakeTest extends SnowflakeBaseTestCase
         $source->expects(self::atLeastOnce())->method('getSasToken')->willReturn($params['sourceSasToken']);
 
         // fake staging table
-        $stagingTable = new SnowflakeTableDefinition(
+        $stagingTable = new SynapseTableDefinition(
             $params['stageSchemaName'],
             $params['stageTableName'],
             true,
             new ColumnCollection($params['stageColumns']),
-            []
+            [],
+            new TableDistributionDefinition(TableDistributionDefinition::TABLE_DISTRIBUTION_HASH, ['id']),
+            new TableIndexDefinition(TableIndexDefinition::TABLE_INDEX_TYPE_CLUSTERED_COLUMNSTORE_INDEX, ['id'])
         );
+
         // fake options
-        $options = new SnowflakeImportOptions(
+        $options = new SynapseImportOptions(
             [],
             false,
             false,
             1
         );
         // fake destination
-        $destination = new SnowflakeTableDefinition(
+        $destination = new SynapseTableDefinition(
             $params['destSchemaName'],
             $params['destTableName'],
             false,
             new ColumnCollection($params['destColumns']),
-            []
+            [],
+            new TableDistributionDefinition(TableDistributionDefinition::TABLE_DISTRIBUTION_HASH, ['id']),
+            new TableIndexDefinition(TableIndexDefinition::TABLE_INDEX_TYPE_CLUSTERED_COLUMNSTORE_INDEX, ['id'])
         );
 
         // mock importer
@@ -111,7 +119,7 @@ class FullImportCustomQueryFakeTest extends SnowflakeBaseTestCase
 
 
         // init query builder
-        $qb = new SnowflakeTableQueryBuilder();
+        $qb = new SynapseTableQueryBuilder();
 
         // ACTION: create stage table
         $conn->executeStatement(
