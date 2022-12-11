@@ -41,6 +41,8 @@ class S3ExportAdapter implements BackendExportAdapterInterface
         Storage\DestinationInterface $destination,
         ExportOptionsInterface $exportOptions
     ): array {
+
+        $fileFormatSql = $this->getFileFormatSql($exportOptions);
         $sql = sprintf(
             <<<EOT
 COPY INTO '%s/%s'
@@ -50,12 +52,7 @@ CREDENTIALS = (
     AWS_SECRET_KEY = '%s'
 )
 REGION = '%s'
-FILE_FORMAT = (
-    TYPE = 'CSV' FIELD_DELIMITER = ','
-    FIELD_OPTIONALLY_ENCLOSED_BY = '\"'
-    %s
-    TIMESTAMP_FORMAT = 'YYYY-MM-DD HH24:MI:SS'
-)
+FILE_FORMAT = (%s)
 ENCRYPTION = (
     TYPE = 'AWS_SSE_S3'
 )
@@ -69,7 +66,7 @@ EOT,
             $destination->getKey(),
             $destination->getSecret(),
             $destination->getRegion(),
-            $exportOptions->isCompressed() ? "COMPRESSION='GZIP'" : "COMPRESSION='NONE'",
+            $fileFormatSql
         );
 
         /** @var array<array{FILE_NAME: string, FILE_SIZE: string, ROW_COUNT: string}> $unloadedFiles */
@@ -81,5 +78,27 @@ EOT,
         }
 
         return $unloadedFiles;
+    }
+
+    private function getFileFormatSql(ExportOptions $exportOptions): string
+    {
+        switch ($exportOptions->getFileType()) {
+            case (ExportOptions::EXPORT_FILE_TYPE_AVRO):
+                return
+                    "TYPE = 'AVRO' COMPRESSION='NONE'";
+            case (ExportOptions::EXPORT_FILE_TYPE_PARQUET):
+                return
+                    "TYPE = 'PARQUET' COMPRESSION='NONE'";
+            default:
+                return sprintf(
+                    <<<EOT
+        TYPE = 'CSV' FIELD_DELIMITER = ','
+        FIELD_OPTIONALLY_ENCLOSED_BY = '\"'
+        %s
+        TIMESTAMP_FORMAT = 'YYYY-MM-DD HH24:MI:SS'
+        EOT,
+                    $exportOptions->isCompressed() ? "COMPRESSION='GZIP'" : "COMPRESSION='NONE'",
+                );
+        }
     }
 }
