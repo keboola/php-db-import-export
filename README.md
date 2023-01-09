@@ -164,6 +164,8 @@ create new database for tests:
 CREATE DATABASE <nick>_ie_lib_tests FROM dbc
     AS PERMANENT = 1e8,
        SPOOL = 1e8;
+
+GRANT EXECUTE FUNCTION on TD_SYSFNLIB.READ_NOS to <nick>_ie_lib_tests;
 ```
 
 ```bash
@@ -173,6 +175,7 @@ TERADATA_PASSWORD=
 TERADATA_PORT=
 TERADATA_DATABASE=
 ```
+
 
 #### Bigquery
 Install [Google Cloud client](https://cloud.google.com/sdk/docs/install-sdk) (via [Brew](https://formulae.brew.sh/cask/google-cloud-sdk#default)), initialize it
