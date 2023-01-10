@@ -83,4 +83,17 @@ abstract class BaseFile
     {
         return sprintf('https://%s.s3.%s.amazonaws.com', $this->bucket, $this->region);
     }
+
+    public function getS3Path(string $fileSuffix): string
+    {
+        return sprintf('%s.s3.%s.amazonaws.com%s', $this->bucket, $this->region, $fileSuffix);
+    }
+
+
+    public function getS3PathFromRelative(string $file): string
+    {
+        $file = str_replace('s3://', '', $file);
+        $file = str_replace($this->getBucket(), '', $file);
+        return $this->getS3Path($file);
+    }
 }
