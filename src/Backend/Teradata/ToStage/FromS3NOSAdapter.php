@@ -39,35 +39,31 @@ class FromS3NOSAdapter implements CopyAdapterInterface
         TableDefinitionInterface $destination,
         ImportOptionsInterface $importOptions
     ): int {
-        try {
-            $files = $source->getManifestEntries();
+        $files = $source->getManifestEntries();
 
-            $useHeader = false;
-            if ($importOptions->getNumberOfIgnoredLines() === ImportOptionsInterface::SKIP_FIRST_LINE) {
-                // CSV contains header
-                $columns = $this->getColumnsFromCSV($source, $files[0]);
-                $useHeader = true;
-            } else {
-                // if no header is provided, NOS will set it as Col1, Col2...
-                $columns = array_map(fn($number) => 'Col' . $number, range(1, count($destination->getColumnsNames())));
-            }
-            foreach (array_chunk($files, self::SLICED_FILES_CHUNK_SIZE) as $filesChunk) {
-                $partialImportCommand = $this->getCopyCommand(
-                    $source,
-                    $filesChunk,
-                    $columns,
-                    $useHeader
-                );
-                $cmd = sprintf(
-                    'INSERT INTO %s.%s %s;',
-                    TeradataQuote::quoteSingleIdentifier($destination->getSchemaName()),
-                    TeradataQuote::quoteSingleIdentifier($destination->getTableName()),
-                    $partialImportCommand
-                );
-                $this->connection->executeStatement($cmd);
-            }
-        } catch (Throwable $e) {
-            throw TeradataException::covertException($e);
+        $useHeader = false;
+        if ($importOptions->getNumberOfIgnoredLines() === ImportOptionsInterface::SKIP_FIRST_LINE) {
+            // CSV contains header
+            $columns = $this->getColumnsFromCSV($source, $files[0]);
+            $useHeader = true;
+        } else {
+            // if no header is provided, NOS will set it as Col1, Col2...
+            $columns = array_map(fn($number) => 'Col' . $number, range(1, count($destination->getColumnsNames())));
+        }
+        foreach (array_chunk($files, self::SLICED_FILES_CHUNK_SIZE) as $filesChunk) {
+            $partialImportCommand = $this->getCopyCommand(
+                $source,
+                $filesChunk,
+                $columns,
+                $useHeader
+            );
+            $cmd = sprintf(
+                'INSERT INTO %s.%s %s;',
+                TeradataQuote::quoteSingleIdentifier($destination->getSchemaName()),
+                TeradataQuote::quoteSingleIdentifier($destination->getTableName()),
+                $partialImportCommand
+            );
+            $this->connection->executeStatement($cmd);
         }
 
         $ref = new TeradataTableReflection(
@@ -149,6 +145,8 @@ class FromS3NOSAdapter implements CopyAdapterInterface
             );
         $columns = $this->connection->fetchAllAssociative($sql);
 
-        return array_map(fn($row) => $row['Name'], $columns);
+        /** @var string[] $out */
+        $out = array_map(fn($row) => $row['Name'], $columns);
+        return $out;
     }
 }
