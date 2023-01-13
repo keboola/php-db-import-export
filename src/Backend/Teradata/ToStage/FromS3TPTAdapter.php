@@ -339,7 +339,7 @@ EOD;
                 '-v',
                 $folder . '/import_vars.txt',
                 '-R',
-                '2',
+                '0',
             ],
         ];
     }
