@@ -332,14 +332,14 @@ EOD;
             $errTable2,
             [
                 'tbuild',
-                '-j',
-                'import',
                 '-L',
                 $folder,
                 '-f',
                 $folder . '/import_script.tpt',
                 '-v',
                 $folder . '/import_vars.txt',
+                '-R',
+                '2',
             ],
         ];
     }
