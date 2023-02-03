@@ -516,32 +516,19 @@ class SqlBuilder
         );
 
         // update only changed rows - mysql TIMESTAMP ON UPDATE behaviour simulation
-        $columnsComparisonSql = array_map(
-            function (SynapseColumn $columnDefinition) use ($dest) {
-
-                $useCoalesce = $columnDefinition->getColumnDefinition()->getBasetype() === BaseType::STRING;
-
-                $sqlTemplate = 'CAST(%s.%s AS %s) != [src].%s';
-                if ($useCoalesce) {
-                    $sqlTemplate = 'COALESCE(CAST(%s.%s AS %s), \'\') != COALESCE([src].%s, \'\')';
-                }
-
-                return sprintf(
-                    $sqlTemplate,
-                    $dest,
-                    SynapseQuote::quoteSingleIdentifier($columnDefinition->getColumnName()),
-                    $this->getColumnTypeSqlDefinition($columnDefinition),
-                    SynapseQuote::quoteSingleIdentifier($columnDefinition->getColumnName())
-                );
-            },
+        $columnsNames = array_map(
+            static fn(SynapseColumn $c) => SynapseQuote::quoteSingleIdentifier(
+                $c->getColumnName()
+            ),
             $columnsForComparison
         );
 
         $and = '';
-        if (count($columnsComparisonSql) !== 0) {
+        if (count($columnsNames) !== 0) {
             $and = sprintf(
-                'AND (%s) ',
-                implode(' OR ', $columnsComparisonSql)
+                'AND (CHECKSUM(%s) != CHECKSUM(%s)) ',
+                implode(', ', array_map(fn(string $c) => sprintf('%s.%s', $dest, $c), $columnsNames)),
+                implode(', ', array_map(fn(string $c) => sprintf('[src].%s', $c), $columnsNames))
             );
         }
 
