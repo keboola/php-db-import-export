@@ -21,7 +21,9 @@ trait MockConnectionTrait
         $mock->expects(self::any())->method('getDatabasePlatform')->willReturn(
             new OraclePlatform(),
         );
-        $mock->expects(self::any())->method('quote')->willReturnCallback(static function ($input) {
+        $mock->expects(self::any())
+            ->method('quote')
+            ->willReturnCallback(static function ($input) {
             return QuoteHelper::quote($input);
         });
 
