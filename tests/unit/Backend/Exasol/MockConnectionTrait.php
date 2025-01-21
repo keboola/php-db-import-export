@@ -24,8 +24,8 @@ trait MockConnectionTrait
         $mock->expects(self::any())
             ->method('quote')
             ->willReturnCallback(static function ($input) {
-            return QuoteHelper::quote($input);
-        });
+                return QuoteHelper::quote($input);
+            });
 
         return $mock;
     }
