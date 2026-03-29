@@ -84,7 +84,7 @@ class SourceFile extends BaseFile implements SourceInterface
             throw new Exception('Load error: ' . $e->getMessage(), Exception::MANDATORY_FILE_NOT_FOUND, $e);
         }
 
-        $body = (string) $response['Body']; // @phpstan-ignore cast.string
+        $body = (string) $response['Body'];
         try {
             /** @var array{entries: array<int, array{url: string}>} $manifest */
             $manifest = json_decode($body, true, 512, JSON_THROW_ON_ERROR);

@@ -1,11 +1,12 @@
 services:
-  production: &prod
+  dev:
     build:
       context: .
-      args:
-        - AWS_ACCESS_KEY_ID
-        - AWS_SECRET_ACCESS_KEY
-        - GITHUB_OAUTH_TOKEN
+    image: keboola/php-db-import-export
+    platform: linux/amd64
+    working_dir: /code
+    volumes:
+      - .:/code
     environment:
       - ABS_ACCOUNT_NAME
       - ABS_ACCOUNT_KEY
@@ -22,7 +23,6 @@ services:
       - AWS_S3_KEY
       - AWS_REGION
       - BUILD_PREFIX
-      - GITHUB_OAUTH_TOKEN
       - STORAGE_TYPE
       - GCS_CREDENTIALS
       - GCS_BUCKET_NAME
@@ -30,15 +30,35 @@ services:
       - BQ_KEY_FILE
       - BQ_BUCKET_NAME
       - SUITE
-  dev: &dev
-    <<: *prod
-    image: keboola/php-db-import-export
-    network_mode: host
-    volumes:
-      - ./:/code
-  dev-xdebug:
-    <<: *dev
-    build: docker/xdebug
 
-volumes:
-  exa-volume:
+  ci:
+    build:
+      context: .
+    image: ci-db-import-export
+    platform: linux/amd64
+    working_dir: /code
+    volumes:
+      - .:/code
+    environment:
+      - ABS_ACCOUNT_NAME
+      - ABS_ACCOUNT_KEY
+      - ABS_CONTAINER_NAME
+      - SNOWFLAKE_HOST
+      - SNOWFLAKE_PORT
+      - SNOWFLAKE_USER
+      - SNOWFLAKE_PASSWORD
+      - SNOWFLAKE_DATABASE
+      - SNOWFLAKE_WAREHOUSE
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_S3_BUCKET
+      - AWS_S3_KEY
+      - AWS_REGION
+      - BUILD_PREFIX
+      - STORAGE_TYPE
+      - GCS_CREDENTIALS
+      - GCS_BUCKET_NAME
+      - GCS_INTEGRATION_NAME
+      - BQ_KEY_FILE
+      - BQ_BUCKET_NAME
+      - SUITE
