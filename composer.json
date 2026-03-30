@@ -10,9 +10,9 @@
     "license": "MIT",
     "require": {
         "php": ">=8.2",
+        "ext-bcmath": "*",
         "ext-json": "*",
         "ext-pdo": "*",
-        "ext-bcmath": "*",
         "doctrine/dbal": "^3.3",
         "google/cloud-bigquery": "^1.23",
         "google/cloud-storage": "^1.27",
@@ -21,7 +21,7 @@
         "keboola/php-datatypes": ">=8",
         "keboola/php-file-storage-utils": "^0.2.5",
         "keboola/php-temp": "^2.0",
-        "keboola/table-backend-utils": ">=3",
+        "keboola/table-backend-utils": "4.1.1",
         "microsoft/azure-storage-blob": "^1.5",
         "symfony/process": "^7.0||^6.0||^5.0||^4.0"
     },
