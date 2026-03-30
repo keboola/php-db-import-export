@@ -19,138 +19,187 @@
 
 ## Development
 
-### Docker
+### Prerequisites
 
-Prepare `.env` (copy of `.env.dist`) and set up AWS keys which has access to `keboola-drivers` bucket in order to build this image. Also add this user to group `ci-php-import-export-lib` witch will allow you to work with newly created bucket for tests.
+- Docker
+- Terraform
+- CLI tools for the backends you want to test:
+  - `aws` CLI ([setup guide](https://keboola.atlassian.net/wiki/spaces/KB/pages/2559475718/AWS+CLI#Using-named-profiles))
+  - `az` CLI
+  - `gcloud` CLI
 
-User can be created in `Dev - Main legacy`, where are also groups for `keboola-drivers` and `ci-php-import-export-lib`.
+### Quick start
 
-Then run `docker compose build`
-
-The AWS credentials have to also have access to bucket specified in `AWS_S3_BUCKET`. This bucket has to contain testing data. Run `docker compose run --rm dev  composer loadS3` to load them up.
-
-
-### Preparation
-
-#### AWS
-
-Run terraform to create resources for tests. See [Terraform.md](./docs/Terraform.md) for details.
-
-
-#### Azure
-
-- Create [storage account](https://portal.azure.com/#create/Microsoft.StorageAccount-ARM) template can be found in provisioning ABS [create template](https://portal.azure.com/#create/Microsoft.Template)
-- Create container in storage account `Blob service -> Containers` *note: for tests this step can be skiped container is created with `loadAbs` cmd*
-- Fill env variables in .env file
+```bash
+cp .env.dist .env
+docker compose build
 ```
-ABS_ACCOUNT_NAME=storageAccount
-ABS_ACCOUNT_KEY=accountKey
-ABS_CONTAINER_NAME=containerName
+
+You only need to provision the backends you want to test. Each backend has its own independent Terraform configuration in `provisioning/`.
+
+### Provisioning cloud resources
+
+Each provider is independent — provision only what you need.
+
+#### AWS (S3)
+
+```bash
+aws sso login --profile=Keboola-Dev-Connection-Team-AWSAdministratorAccess
+
+# Set your prefix (keep it short, e.g. your nick)
+cat <<EOF > ./provisioning/aws/terraform.tfvars
+name_prefix = "<your-nick>"
+EOF
+
+terraform -chdir=./provisioning/aws init
+terraform -chdir=./provisioning/aws apply
+
+# Export credentials to .env
+./provisioning/update-env.sh aws
 ```
-- Upload test fixtures to ABS `docker compose run --rm dev composer loadAbs`
 
-#### Google cloud storage
+For CI, override the AWS account:
 
-- Create bucket in [GCS](https://console.cloud.google.com/storage) set bucket name in .env variable `GCS_BUCKET_NAME`
-- Create service account in [IAM](https://console.cloud.google.com/iam-admin/serviceaccounts)
-- In bucket permissions grant service account admin access to bucket
-- Create new service account key
-- Convert key to string `awk -v RS= '{$1=$1}1' <key_file>.json >> .env` (or `cat file.json | jq -c | jq -R`)
-- Set content on last line of .env as variable `GCS_CREDENTIALS`
+```bash
+terraform -chdir=./provisioning/aws apply -var aws_account_id=149899208592 -var aws_profile=<ci-profile>
+```
 
-- Upload test fixtures to GCS `docker compose run --rm dev composer loadGcs-bigquery` or `docker compose run --rm dev composer loadGcs-snowflake` (depending on backend)
+Load test fixtures:
 
-#### SNOWFLAKE
+```bash
+docker compose run --rm dev composer loadS3
+```
 
-Role, user, database and warehouse are required for tests. You can create them:
+#### Azure (ABS)
+
+```bash
+az login
+az account set --subscription eac4eb61-1abe-47e2-a0a1-f0a7e066f385
+
+cat <<EOF > ./provisioning/azure/terraform.tfvars
+name_prefix = "<your-nick>"
+EOF
+
+terraform -chdir=./provisioning/azure init
+terraform -chdir=./provisioning/azure apply
+
+./provisioning/update-env.sh azure
+```
+
+Load test fixtures:
+
+```bash
+docker compose run --rm dev composer loadAbs
+```
+
+#### BigQuery
+
+Requires `resourcemanager.folders.create` permission for the organization.
+
+```bash
+gcloud auth application-default login
+
+cat <<EOF > ./provisioning/bigquery/terraform.tfvars
+name_prefix        = "<your-nick>"
+folder_id          = "<GCP folder ID from https://console.cloud.google.com/cloud-resource-manager>"
+billing_account_id = "<billing account ID from https://console.cloud.google.com/billing/>"
+EOF
+
+terraform -chdir=./provisioning/bigquery init
+terraform -chdir=./provisioning/bigquery apply
+
+./provisioning/update-env.sh bigquery
+```
+
+Load test fixtures:
+
+```bash
+docker compose run --rm dev composer loadGcs-bigquery
+```
+
+#### Snowflake
+
+Snowflake resources are created manually. On `keboolaconnectiondev.us-east-1.snowflakecomputing.com`:
 
 ```sql
-CREATE ROLE "KEBOOLA_DB_IMPORT_EXPORT";
-CREATE DATABASE "KEBOOLA_DB_IMPORT_EXPORT";
+CREATE ROLE "<PREFIX>_DB_IMPORT_EXPORT";
+CREATE DATABASE "<PREFIX>_DB_IMPORT_EXPORT";
 
-GRANT ALL PRIVILEGES ON DATABASE "KEBOOLA_DB_IMPORT_EXPORT" TO ROLE "KEBOOLA_DB_IMPORT_EXPORT";
-GRANT USAGE ON WAREHOUSE "DEV" TO ROLE "KEBOOLA_DB_IMPORT_EXPORT";
+GRANT ALL PRIVILEGES ON DATABASE "<PREFIX>_DB_IMPORT_EXPORT" TO ROLE "<PREFIX>_DB_IMPORT_EXPORT";
+GRANT USAGE ON WAREHOUSE "DEV" TO ROLE "<PREFIX>_DB_IMPORT_EXPORT";
 
-CREATE USER "KEBOOLA_DB_IMPORT_EXPORT"
-PASSWORD = 'Password'
-DEFAULT_ROLE = "KEBOOLA_DB_IMPORT_EXPORT";
+CREATE USER "<PREFIX>_DB_IMPORT_EXPORT"
+  PASSWORD = '<password>'
+  DEFAULT_ROLE = "<PREFIX>_DB_IMPORT_EXPORT";
 
-GRANT ROLE "KEBOOLA_DB_IMPORT_EXPORT" TO USER "KEBOOLA_DB_IMPORT_EXPORT";
+GRANT ROLE "<PREFIX>_DB_IMPORT_EXPORT" TO USER "<PREFIX>_DB_IMPORT_EXPORT";
+```
 
--- For GCS create storage integration https://docs.snowflake.com/en/user-guide/data-load-gcs-config.html#creating-a-custom-iam-role
-CREATE STORAGE INTEGRATION "KEBOOLA_DB_IMPORT_EXPORT"
+Set env variables in `.env`:
+
+```
+SNOWFLAKE_HOST=keboolaconnectiondev.us-east-1.snowflakecomputing.com
+SNOWFLAKE_PORT=443
+SNOWFLAKE_USER=<PREFIX>_DB_IMPORT_EXPORT
+SNOWFLAKE_PASSWORD=<password>
+SNOWFLAKE_DATABASE=<PREFIX>_DB_IMPORT_EXPORT
+SNOWFLAKE_WAREHOUSE=DEV
+```
+
+For GCS-Snowflake tests, create a [storage integration](https://docs.snowflake.com/en/user-guide/data-load-gcs-config.html#creating-a-custom-iam-role):
+
+```sql
+CREATE STORAGE INTEGRATION "<PREFIX>_DB_IMPORT_EXPORT"
   TYPE = EXTERNAL_STAGE
   STORAGE_PROVIDER = GCS
   ENABLED = TRUE
-  STORAGE_ALLOWED_LOCATIONS = ('gcs://<your gcs bucket>/');
--- set integration name to env GCS_INTEGRATION_NAME in .env file
--- get service account id `STORAGE_GCP_SERVICE_ACCOUNT`
-DESC STORAGE INTEGRATION "KEBOOLA_DB_IMPORT_EXPORT";
--- continue according manual ^ in snflk documentation assign roles for Data loading and unloading
+  STORAGE_ALLOWED_LOCATIONS = ('gcs://<your-gcs-bucket>/');
+
+-- Get STORAGE_GCP_SERVICE_ACCOUNT and grant it access to your GCS bucket
+DESC STORAGE INTEGRATION "<PREFIX>_DB_IMPORT_EXPORT";
 ```
 
-#### Bigquery
-Install [Google Cloud client](https://cloud.google.com/sdk/docs/install-sdk) (via [Brew](https://formulae.brew.sh/cask/google-cloud-sdk#default)), initialize it
-and log in to [generate default credentials](https://cloud.google.com/docs/authentication/application-default-credentials#personal).
+Set `GCS_INTEGRATION_NAME` in `.env`.
 
-To prepare the backend you can use [Terraform template](./bq-storage-backend-init.tf).
-You must have the `resourcemanager.folders.create` permission for the organization.
-```bash
-# you can copy it to a folder somewhere and make an init
-terraform init
-```
+#### GCS (for Snowflake-GCS tests)
 
-Run `terraform apply` with following variables:
- - folder_id: Go to [GCP Resource Manager](https://console.cloud.google.com/cloud-resource-manager) and select your team dev folder ID (e.g. find 'KBC Team Dev' and copy ID)
- - backend_prefix: your_name, all resources will create with this prefix
- - billing_account_id: Go to [Billing](https://console.cloud.google.com/billing/) and copy your Billing account ID
+If you need GCS staging for Snowflake (not BigQuery), set up manually:
 
-```bash
-terraform apply -var folder_id=<folder_id> -var backend_prefix=<your_prefix> -var billing_account_id=<billing_account_id>
-```
-
-For missing pieces see [Connection repository](https://github.com/keboola/connection/blob/master/DOCKER.md#bigquery).
-After terraform apply ends go to the service project in folder created by terraform.
-1. convert key to string and save to `.env` file: `awk -v RS= '{$1=$1}1' <key_file>.json >> .env`
-2. set content on the last line of `.env` as variable `BQ_KEY_FILE`
-3. set env variable `BQ_BUCKET_NAME` generated from TF template `file_storage_bucket_id`
+1. Create a GCS bucket
+2. Create a service account with Storage Admin role on the bucket
+3. Generate a JSON key and set `GCS_CREDENTIALS` in `.env` (`cat key.json | jq -c`)
+4. Set `GCS_BUCKET_NAME` in `.env`
+5. Load fixtures: `docker compose run --rm dev composer loadGcs-snowflake`
 
 ### Tests
 
-Run tests with following command.
-
-*note: azure credentials must be provided and fixtures uploaded*
-
-```
+```bash
+# All tests (requires all backends configured)
 docker compose run --rm dev composer tests
-```
 
-Unit and functional test can be run sepparetly
-```
-#unit test
+# Unit tests only (no backend needed)
 docker compose run --rm dev composer tests-unit
 
-#functional test
-docker compose run --rm dev composer tests-functional
+# Backend-specific functional tests
+docker compose run --rm dev composer tests-snowflake-abs
+docker compose run --rm dev composer tests-snowflake-s3
+docker compose run --rm dev composer tests-snowflake-gcs
+docker compose run --rm dev composer tests-bigquery
 ```
 
-### Code quality check
+### Code quality
 
-```
-#phplint
+```bash
 docker compose run --rm dev composer phplint
-
-#phpcs
 docker compose run --rm dev composer phpcs
-
-#phpstan
 docker compose run --rm dev composer phpstan
 ```
 
 ### Full CI workflow
 
-This command will run all checks load fixtures and run tests
-```
+Runs all checks, loads fixtures, and runs tests:
+
+```bash
 docker compose run --rm dev composer ci
 ```
 
