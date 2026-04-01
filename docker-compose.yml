@@ -39,6 +39,7 @@ services:
     working_dir: /code
     volumes:
       - .:/code
+      - ../TableBackendUtils:/code/packages/TableBackendUtils
     environment:
       - ABS_ACCOUNT_NAME
       - ABS_ACCOUNT_KEY
