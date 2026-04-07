@@ -1,12 +1,15 @@
 services:
   dev:
     build:
-      context: .
+      context: ../..
+      dockerfile: Dockerfile
+      target: package-ci
     image: keboola/php-db-import-export
     platform: linux/amd64
     working_dir: /code
     volumes:
       - .:/code
+      - ../TableBackendUtils:/code/packages/TableBackendUtils
     environment:
       - ABS_ACCOUNT_NAME
       - ABS_ACCOUNT_KEY
@@ -33,7 +36,9 @@ services:
 
   ci:
     build:
-      context: .
+      context: ../..
+      dockerfile: Dockerfile
+      target: package-ci
     image: ci-db-import-export
     platform: linux/amd64
     working_dir: /code
