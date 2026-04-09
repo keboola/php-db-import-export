@@ -66,7 +66,6 @@
             "@tests-unit",
             "@tests-functional"
         ],
-
         "phpstan": "phpstan analyse ./src ./tests --level=max --no-progress -c phpstan.neon",
         "phpcs": "phpcs -n --ignore=*/vendor/* --extensions=php .",
         "phpcs-report": "phpcs -n --report=source -s --ignore=*/vendor/* --extensions=php .",
@@ -101,5 +100,16 @@
             "phpstan/extension-installer": true,
             "dealerdirect/phpcodesniffer-composer-installer": true
         }
-    }
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "packages/TableBackendUtils",
+            "options": {
+                "versions": {
+                    "keboola/table-backend-utils": "99.99.99"
+                }
+            }
+        }
+    ]
 }
