@@ -10,6 +10,7 @@ services:
     volumes:
       - .:/code
       - ../TableBackendUtils:/code/packages/TableBackendUtils
+      - ../PhpDatatypes:/code/Package/PhpDatatypes
     environment:
       - ABS_ACCOUNT_NAME
       - ABS_ACCOUNT_KEY
