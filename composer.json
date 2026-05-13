@@ -110,6 +110,15 @@
                     "keboola/table-backend-utils": "99.99.99"
                 }
             }
+        },
+        {
+            "type": "path",
+            "url": "packages/PhpDatatypes",
+            "options": {
+                "versions": {
+                    "keboola/php-datatypes": "99.99.99"
+                }
+            }
         }
     ]
 }
