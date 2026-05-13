@@ -456,6 +456,11 @@ class AssertTest extends TestCase
                 return 'test2';
             }
 
+            public function getDescription(): ?string
+            {
+                return null;
+            }
+
             public function getColumnDefinition(): DefinitionInterface
             {
                 return new class($this->type, ['length' => $this->length]) extends Common {
@@ -667,6 +672,11 @@ class AssertTest extends TestCase
             public function getTableType(): TableType
             {
                 return TableType::TABLE;
+            }
+
+            public function getDescription(): ?string
+            {
+                return null;
             }
         };
     }
