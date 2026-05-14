@@ -57,6 +57,11 @@ final class SourceDestinationColumnMapTest extends TestCase
                 return $this->name;
             }
 
+            public function getDescription(): ?string
+            {
+                return null;
+            }
+
             public function getColumnDefinition(): DefinitionInterface
             {
                 return new class($this->type) implements DefinitionInterface {
@@ -97,6 +102,11 @@ final class SourceDestinationColumnMapTest extends TestCase
                     public function getDefault(): ?string
                     {
                         throw new Exception('Not implemented');
+                    }
+
+                    public function getDescription(): ?string
+                    {
+                        return null;
                     }
 
                     public static function getTypeByBasetype(string $basetype): string
