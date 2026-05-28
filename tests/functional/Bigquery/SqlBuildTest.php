@@ -237,12 +237,6 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         /** @var array<int, array<string, mixed>> $resultArray */
         $resultArray = iterator_to_array($result->getIterator());
-        $queryResult = array_map(
-            static function (array $row): array {
-                return array_values($row);
-            },
-            $resultArray,
-        );
         self::assertEqualsCanonicalizing(
             [
             [
@@ -266,7 +260,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
                 'col2' => '',
             ],
             ],
-            $queryResult,
+            $resultArray,
         );
     }
 
@@ -396,12 +390,6 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         /** @var array<int, array<string, mixed>> $resultArray */
         $resultArray = iterator_to_array($result->getIterator());
-        $queryResult = array_map(
-            static function (array $row): array {
-                return array_values($row);
-            },
-            $resultArray,
-        );
         self::assertEqualsCanonicalizing(
             [
             [
@@ -425,7 +413,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
                 'col2' => '',
             ],
             ],
-            $queryResult,
+            $resultArray,
         );
     }
 
