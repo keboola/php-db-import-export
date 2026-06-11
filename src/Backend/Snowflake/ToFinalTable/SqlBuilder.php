@@ -353,9 +353,10 @@ class SqlBuilder
             }
             $quotedColumn = SnowflakeQuote::quoteSingleIdentifier($columnName);
             $destinationColumn = $destinationColumnsByName[$columnName] ?? null;
-            // A length-less destination column is a non-typed (string) column; coerce the source
-            // value to it so the recreated table keeps the registered VARCHAR typing.
-            if ($destinationColumn !== null && $destinationColumn->getColumnDefinition()->getLength() === null) {
+            // A generic non-typed (string) destination column (length-less VARCHAR NOT NULL
+            // DEFAULT '') is coerced to its registered type so the recreated table keeps the
+            // VARCHAR typing. Other length-less types (e.g. TIMESTAMP_NTZ) keep their source value.
+            if ($destinationColumn instanceof SnowflakeColumn && $destinationColumn->isGenericColumn()) {
                 $columns[] = sprintf(
                     'CAST(%s AS %s) AS %s',
                     $quotedColumn,

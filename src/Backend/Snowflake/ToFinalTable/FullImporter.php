@@ -16,6 +16,7 @@ use Keboola\Db\ImportExport\Backend\Snowflake\ToStage\StageTableDefinitionFactor
 use Keboola\Db\ImportExport\Backend\ToFinalTableImporterInterface;
 use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
+use Keboola\TableBackendUtils\Column\Snowflake\SnowflakeColumn;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableDefinition;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableQueryBuilder;
 use Keboola\TableBackendUtils\Table\TableDefinitionInterface;
@@ -53,14 +54,15 @@ final class FullImporter implements ToFinalTableImporterInterface
         SnowflakeTableDefinition $destinationTableDefinition,
         ImportState $state,
     ): void {
-        // Non-typed (string) destination columns are registered as a length-less VARCHAR. The
-        // workspace CTAS output (the source) carries explicit lengths / non-string types, which
-        // the strict schema check would always reject against a length-less column. Those columns
-        // are coerced to the destination type by the CTAS itself (see getCTASInsertAllIntoTargetTableCommand),
-        // so they are excluded from the strict assert; explicitly-typed columns stay strict (DMD-1575).
+        // Generic non-typed (string) destination columns are registered as a length-less VARCHAR
+        // NOT NULL DEFAULT ''. The workspace CTAS output (the source) carries explicit lengths /
+        // non-string types, which the strict schema check would always reject against such a
+        // column. Those columns are coerced to the destination type by the CTAS itself (see
+        // getCTASInsertAllIntoTargetTableCommand), so they are excluded from the strict assert;
+        // explicitly-typed columns — including other length-less types — stay strict (DMD-1575).
         $nonTypedColumnNames = [];
         foreach ($destinationTableDefinition->getColumnsDefinitions() as $destinationColumn) {
-            if ($destinationColumn->getColumnDefinition()->getLength() === null) {
+            if ($destinationColumn instanceof SnowflakeColumn && $destinationColumn->isGenericColumn()) {
                 $nonTypedColumnNames[] = $destinationColumn->getColumnName();
             }
         }
