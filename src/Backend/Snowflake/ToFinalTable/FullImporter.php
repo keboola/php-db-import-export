@@ -53,11 +53,25 @@ final class FullImporter implements ToFinalTableImporterInterface
         SnowflakeTableDefinition $destinationTableDefinition,
         ImportState $state,
     ): void {
+        // Non-typed (string) destination columns are registered as a length-less VARCHAR. The
+        // workspace CTAS output (the source) carries explicit lengths / non-string types, which
+        // the strict schema check would always reject against a length-less column. Those columns
+        // are coerced to the destination type by the CTAS itself (see getCTASInsertAllIntoTargetTableCommand),
+        // so they are excluded from the strict assert; explicitly-typed columns stay strict (DMD-1575).
+        $nonTypedColumnNames = [];
+        foreach ($destinationTableDefinition->getColumnsDefinitions() as $destinationColumn) {
+            if ($destinationColumn->getColumnDefinition()->getLength() === null) {
+                $nonTypedColumnNames[] = $destinationColumn->getColumnName();
+            }
+        }
+
         Assert::assertSameColumnsUnordered(
             source: $stagingTableDefinition->getColumnsDefinitions(),
             destination: $destinationTableDefinition->getColumnsDefinitions(),
+            ignoreSourceColumns: $nonTypedColumnNames,
             ignoreDestinationColumns: [
                 ToStageImporterInterface::TIMESTAMP_COLUMN_NAME,
+                ...$nonTypedColumnNames,
             ],
             assertOptions: Assert::ASSERT_STRICT_LENGTH,
         );
