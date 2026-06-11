@@ -14,8 +14,8 @@ use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeException;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToStage\StageTableDefinitionFactory;
 use Keboola\Db\ImportExport\Backend\ToFinalTableImporterInterface;
-use Keboola\Db\ImportExport\Exception\ColumnsMismatchException;
 use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
+use Keboola\Db\ImportExport\Exception\ColumnsMismatchException;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
 use Keboola\TableBackendUtils\Column\Snowflake\SnowflakeColumn;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableDefinition;
@@ -71,15 +71,16 @@ final class FullImporter implements ToFinalTableImporterInterface
         // Non-typed columns are excluded from the strict assert below, but their presence still
         // matters: CTAS uses CREATE OR REPLACE TABLE ... AS SELECT, so a non-typed destination
         // column missing from the source would be silently dropped (schema/data loss) rather than
-        // coerced. Fail fast on that. Source-only and typed-column drift is still caught by the
-        // strict assert (count + name checks); this only closes the gap for the ignored columns.
+        // coerced. Fail fast on the specific missing column. Source-only and typed-column drift is
+        // still caught by the strict assert (count + name checks); this only closes the gap for the
+        // ignored columns.
         $sourceColumnNames = $stagingTableDefinition->getColumnsNames();
-        $droppedNonTypedColumns = array_diff($nonTypedColumnNames, $sourceColumnNames);
-        if ($droppedNonTypedColumns !== []) {
-            throw ColumnsMismatchException::createColumnsCountMismatch(
-                $stagingTableDefinition->getColumnsDefinitions(),
-                $destinationTableDefinition->getColumnsDefinitions(),
-            );
+        foreach ($destinationTableDefinition->getColumnsDefinitions() as $destinationColumn) {
+            if (in_array($destinationColumn->getColumnName(), $nonTypedColumnNames, true)
+                && !in_array($destinationColumn->getColumnName(), $sourceColumnNames, true)
+            ) {
+                throw ColumnsMismatchException::createColumnByNameMissingInSource($destinationColumn);
+            }
         }
 
         Assert::assertSameColumnsUnordered(
