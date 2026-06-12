@@ -15,7 +15,9 @@ use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToStage\StageTableDefinitionFactory;
 use Keboola\Db\ImportExport\Backend\ToFinalTableImporterInterface;
 use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
+use Keboola\Db\ImportExport\Exception\ColumnsMismatchException;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
+use Keboola\TableBackendUtils\Column\Snowflake\SnowflakeColumn;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableDefinition;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableQueryBuilder;
 use Keboola\TableBackendUtils\Table\TableDefinitionInterface;
@@ -53,11 +55,41 @@ final class FullImporter implements ToFinalTableImporterInterface
         SnowflakeTableDefinition $destinationTableDefinition,
         ImportState $state,
     ): void {
+        // Generic non-typed (string) destination columns are registered as a length-less VARCHAR
+        // NOT NULL DEFAULT ''. The workspace CTAS output (the source) carries explicit lengths /
+        // non-string types, which the strict schema check would always reject against such a
+        // column. Those columns are coerced to the destination type by the CTAS itself (see
+        // getCTASInsertAllIntoTargetTableCommand), so they are excluded from the strict assert;
+        // explicitly-typed columns — including other length-less types — stay strict (DMD-1575).
+        $nonTypedColumnNames = [];
+        foreach ($destinationTableDefinition->getColumnsDefinitions() as $destinationColumn) {
+            if ($destinationColumn instanceof SnowflakeColumn && $destinationColumn->isGenericColumn()) {
+                $nonTypedColumnNames[] = $destinationColumn->getColumnName();
+            }
+        }
+
+        // Non-typed columns are excluded from the strict assert below, but their presence still
+        // matters: CTAS uses CREATE OR REPLACE TABLE ... AS SELECT, so a non-typed destination
+        // column missing from the source would be silently dropped (schema/data loss) rather than
+        // coerced. Fail fast on the specific missing column. Source-only and typed-column drift is
+        // still caught by the strict assert (count + name checks); this only closes the gap for the
+        // ignored columns.
+        $sourceColumnNames = $stagingTableDefinition->getColumnsNames();
+        foreach ($destinationTableDefinition->getColumnsDefinitions() as $destinationColumn) {
+            if (in_array($destinationColumn->getColumnName(), $nonTypedColumnNames, true)
+                && !in_array($destinationColumn->getColumnName(), $sourceColumnNames, true)
+            ) {
+                throw ColumnsMismatchException::createColumnByNameMissingInSource($destinationColumn);
+            }
+        }
+
         Assert::assertSameColumnsUnordered(
             source: $stagingTableDefinition->getColumnsDefinitions(),
             destination: $destinationTableDefinition->getColumnsDefinitions(),
+            ignoreSourceColumns: $nonTypedColumnNames,
             ignoreDestinationColumns: [
                 ToStageImporterInterface::TIMESTAMP_COLUMN_NAME,
+                ...$nonTypedColumnNames,
             ],
             assertOptions: Assert::ASSERT_STRICT_LENGTH,
         );

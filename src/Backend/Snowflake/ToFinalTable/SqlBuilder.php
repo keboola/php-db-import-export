@@ -335,13 +335,38 @@ class SqlBuilder
             SnowflakeQuote::quoteSingleIdentifier($destinationTableDefinition->getTableName()),
         );
 
-        $columns = array_map(
-            static fn($col) => SnowflakeQuote::quoteSingleIdentifier($col),
-            array_filter(
-                $sourceTableDefinition->getColumnsNames(),
-                static fn($col) => $col !== ToStageImporterInterface::TIMESTAMP_COLUMN_NAME,
-            ),
-        );
+        // Map destination columns by name so source values can be coerced to the destination
+        // column type. A non-typed (string) destination registers its columns as a length-less
+        // VARCHAR, while the workspace CTAS output (the source) may carry explicit lengths or
+        // non-string types (e.g. TRY_CAST(... AS INTEGER)). A plain `CREATE OR REPLACE ... AS
+        // SELECT` would copy those source types verbatim; casting to the destination type keeps
+        // such columns string-typed and matching the registered schema (DMD-1575).
+        $destinationColumnsByName = [];
+        foreach ($destinationTableDefinition->getColumnsDefinitions() as $destinationColumn) {
+            $destinationColumnsByName[$destinationColumn->getColumnName()] = $destinationColumn;
+        }
+
+        $columns = [];
+        foreach ($sourceTableDefinition->getColumnsNames() as $columnName) {
+            if ($columnName === ToStageImporterInterface::TIMESTAMP_COLUMN_NAME) {
+                continue;
+            }
+            $quotedColumn = SnowflakeQuote::quoteSingleIdentifier($columnName);
+            $destinationColumn = $destinationColumnsByName[$columnName] ?? null;
+            // A generic non-typed (string) destination column (length-less VARCHAR NOT NULL
+            // DEFAULT '') is coerced to its registered type so the recreated table keeps the
+            // VARCHAR typing. Other length-less types (e.g. TIMESTAMP_NTZ) keep their source value.
+            if ($destinationColumn instanceof SnowflakeColumn && $destinationColumn->isGenericColumn()) {
+                $columns[] = sprintf(
+                    'CAST(%s AS %s) AS %s',
+                    $quotedColumn,
+                    $destinationColumn->getColumnDefinition()->getType(),
+                    $quotedColumn,
+                );
+                continue;
+            }
+            $columns[] = $quotedColumn;
+        }
 
         // Create the CTAS command
         return sprintf(
