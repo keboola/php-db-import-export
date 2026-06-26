@@ -43,7 +43,7 @@ EOT
         // phpcs:enable
         $conn->expects(self::once())->method('fetchAllAssociative')
             // phpcs:ignore
-            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
+            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT,LAST_ALTERED FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
             ->willReturn(
                 [
                 [
@@ -95,7 +95,7 @@ EOT
         // phpcs:enable
         $conn->expects(self::once())->method('fetchAllAssociative')
             // phpcs:ignore
-            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
+            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT,LAST_ALTERED FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
             ->willReturn(
                 [
                 [
@@ -149,7 +149,7 @@ EOT
         // phpcs:enable
         $conn->expects(self::once())->method('fetchAllAssociative')
             // phpcs:ignore
-            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
+            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT,LAST_ALTERED FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
             ->willReturn(
                 [
                 [
@@ -204,7 +204,7 @@ EOT
 
         $conn->expects(self::once())->method('fetchAllAssociative')
             // phpcs:ignore
-            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
+            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT,LAST_ALTERED FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
             ->willReturn(
                 [
                 [
@@ -278,7 +278,7 @@ EOT;
 
         $conn->expects(self::once())->method('fetchAllAssociative')
             // phpcs:ignore
-            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
+            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT,LAST_ALTERED FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
             ->willReturn(
                 [
                 [
