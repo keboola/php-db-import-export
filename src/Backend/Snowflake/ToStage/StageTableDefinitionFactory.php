@@ -16,10 +16,16 @@ final class StageTableDefinitionFactory
 {
     /**
      * @param string[] $sourceColumnsNames
+     * @param bool $stageVectorAsVarchar When the data is loaded from a file, a VECTOR column arrives
+     *     as its serialized JSON-array text (Snowflake cannot COPY a VECTOR directly from a file -
+     *     see SnowflakeQueryBuilder, DMD-1680). Stage such columns as VARCHAR so the load succeeds;
+     *     the ToFinalTable importer restores them via CAST(PARSE_JSON(..) AS ARRAY)::VECTOR. For
+     *     table-to-table imports the source already holds a native VECTOR, so this must stay false.
      */
     public static function createStagingTableDefinition(
         TableDefinitionInterface $destination,
         array $sourceColumnsNames,
+        bool $stageVectorAsVarchar = false,
     ): SnowflakeTableDefinition {
         /** @var SnowflakeTableDefinition $destination */
         $newDefinitions = [];
@@ -30,6 +36,12 @@ final class StageTableDefinitionFactory
             /** @var SnowflakeColumn $definition */
             foreach ($destination->getColumnsDefinitions() as $definition) {
                 if ($definition->getColumnName() === $columnName) {
+                    if ($stageVectorAsVarchar
+                        && $definition->getColumnDefinition()->getType() === Snowflake::TYPE_VECTOR
+                    ) {
+                        $newDefinitions[] = self::createNvarcharColumn($columnName);
+                        continue 2;
+                    }
                     // if column exists in destination set destination type
                     $newDefinitions[] = new SnowflakeColumn(
                         $columnName,
