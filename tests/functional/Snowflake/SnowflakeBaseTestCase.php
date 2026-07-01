@@ -375,6 +375,8 @@ class SnowflakeBaseTestCase extends ImportExportBaseTest
     {
         return self::SNFLK_DEST_SCHEMA_NAME
             . '-'
+            . self::getSnowflakeBuildPrefix()
+            . '-'
             . getenv('SUITE');
     }
 
@@ -382,17 +384,44 @@ class SnowflakeBaseTestCase extends ImportExportBaseTest
     {
         return self::SNFLK_SOURCE_SCHEMA_NAME
             . '-'
+            . self::getSnowflakeBuildPrefix()
+            . '-'
             . getenv('SUITE');
+    }
+
+    protected static function getSnowflakeBuildPrefix(): string
+    {
+        $buildPrefix = getenv('BUILD_PREFIX');
+        if ($buildPrefix === false) {
+            return '';
+        }
+
+        return $buildPrefix;
     }
 
     protected static function getTestObjectSuffix(): string
     {
+        $parts = [];
+        $buildPrefix = self::getSnowflakeBuildPrefix();
+        if ($buildPrefix !== '') {
+            $parts[] = self::sanitizeTestObjectNamePart($buildPrefix);
+        }
+
         $suite = getenv('SUITE');
-        if ($suite === false || $suite === '') {
+        if ($suite !== false && $suite !== '') {
+            $parts[] = self::sanitizeTestObjectNamePart($suite);
+        }
+
+        if ($parts === []) {
             return '';
         }
 
-        return preg_replace('/[^a-zA-Z0-9_]/', '_', $suite) . '_';
+        return implode('_', $parts) . '_';
+    }
+
+    private static function sanitizeTestObjectNamePart(string $value): string
+    {
+        return (string) preg_replace('/[^a-zA-Z0-9_]/', '_', $value);
     }
 
     protected function cleanSchema(string $schemaName): void
