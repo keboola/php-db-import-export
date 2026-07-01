@@ -18,17 +18,38 @@ use Tests\Keboola\Db\ImportExportFunctional\Snowflake\SnowflakeBaseTestCase;
 class SqlBuilderCTASTest extends SnowflakeBaseTestCase
 {
     public const TESTS_PREFIX = 'import_export_test_';
-    public const TEST_SCHEMA = self::TESTS_PREFIX . 'schema';
-    public const TEST_SCHEMA_QUOTED = '"' . self::TEST_SCHEMA . '"';
     public const TEST_STAGING_TABLE = '__temp_stagingTable';
     public const TEST_STAGING_TABLE_QUOTED = '"__temp_stagingTable"';
     public const TEST_TABLE = self::TESTS_PREFIX . 'test';
-    public const TEST_TABLE_IN_SCHEMA = self::TEST_SCHEMA_QUOTED . '.' . self::TEST_TABLE_QUOTED;
     public const TEST_TABLE_QUOTED = '"' . self::TEST_TABLE . '"';
+
+    private static function getTestSchema(): string
+    {
+        return self::TESTS_PREFIX . self::getTestObjectSuffix() . 'schema';
+    }
+
+    private static function getTestSchemaQuoted(): string
+    {
+        return SnowflakeQuote::quoteSingleIdentifier(self::getTestSchema());
+    }
+
+    private static function expectedSql(string $sql): string
+    {
+        return str_replace('"import_export_test_schema"', self::getTestSchemaQuoted(), $sql);
+    }
+
+    private static function assertSqlSame(mixed $expected, mixed $actual, string $message = ''): void
+    {
+        if (is_string($expected)) {
+            $expected = self::expectedSql($expected);
+        }
+
+        self::assertSame($expected, $actual, $message);
+    }
 
     protected function dropTestSchema(): void
     {
-        $this->cleanSchema(self::TEST_SCHEMA);
+        $this->cleanSchema(self::getTestSchema());
     }
 
     protected function getBuilder(): SqlBuilder
@@ -44,13 +65,13 @@ class SqlBuilderCTASTest extends SnowflakeBaseTestCase
 
     protected function createTestSchema(): void
     {
-        $this->createSchema(self::TEST_SCHEMA);
+        $this->createSchema(self::getTestSchema());
     }
 
     private function createStagingTableWithData(): SnowflakeTableDefinition
     {
         $def = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -98,7 +119,7 @@ class SqlBuilderCTASTest extends SnowflakeBaseTestCase
     private function createTestTableWithColumns(): SnowflakeTableDefinition
     {
         $def = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             false,
             new ColumnCollection([
@@ -148,7 +169,7 @@ class SqlBuilderCTASTest extends SnowflakeBaseTestCase
             DateTimeHelper::getTimestampFormated(new DateTimeImmutable('2023-10-01 12:00:00')),
         );
         // phpcs:ignore
-        $this->assertSame('CREATE OR REPLACE TABLE "import_export_test_schema"."import_export_test_test" AS SELECT "col1","col2",\'2023-10-01 12:00:00\' AS "_timestamp" FROM "import_export_test_schema"."__temp_stagingTable"', $sql);
+        self::assertSqlSame('CREATE OR REPLACE TABLE "import_export_test_schema"."import_export_test_test" AS SELECT "col1","col2",\'2023-10-01 12:00:00\' AS "_timestamp" FROM "import_export_test_schema"."__temp_stagingTable"', $sql);
         // Verify the SQL contains the CREATE OR REPLACE TABLE statement
         self::assertStringContainsString(
             'CREATE OR REPLACE TABLE',
@@ -159,7 +180,7 @@ class SqlBuilderCTASTest extends SnowflakeBaseTestCase
         self::assertStringContainsString(
             sprintf(
                 '%s.%s',
-                SnowflakeQuote::quoteSingleIdentifier(self::TEST_SCHEMA),
+                self::getTestSchemaQuoted(),
                 SnowflakeQuote::quoteSingleIdentifier(self::TEST_STAGING_TABLE),
             ),
             $sql,
@@ -169,7 +190,7 @@ class SqlBuilderCTASTest extends SnowflakeBaseTestCase
         self::assertStringContainsString(
             sprintf(
                 '%s.%s',
-                SnowflakeQuote::quoteSingleIdentifier(self::TEST_SCHEMA),
+                self::getTestSchemaQuoted(),
                 SnowflakeQuote::quoteSingleIdentifier(self::TEST_TABLE),
             ),
             $sql,
@@ -187,7 +208,7 @@ class SqlBuilderCTASTest extends SnowflakeBaseTestCase
             ),
         );
 
-        self::assertSame(
+        self::assertSqlSame(
             [
             [
                 'col1' => '1',
@@ -236,7 +257,7 @@ class SqlBuilderCTASTest extends SnowflakeBaseTestCase
             DateTimeHelper::getTimestampFormated(new DateTimeImmutable('2023-10-01 12:00:00')),
         );
         // phpcs:ignore
-        $this->assertSame('CREATE OR REPLACE TABLE "import_export_test_schema"."import_export_test_test" AS SELECT "col1","col2",\'2023-10-01 12:00:00\' AS "_timestamp" FROM "import_export_test_schema"."__temp_stagingTable"', $sql);
+        self::assertSqlSame('CREATE OR REPLACE TABLE "import_export_test_schema"."import_export_test_test" AS SELECT "col1","col2",\'2023-10-01 12:00:00\' AS "_timestamp" FROM "import_export_test_schema"."__temp_stagingTable"', $sql);
         // Execute the SQL to verify it works
         $this->connection->executeStatement($sql);
 
@@ -249,7 +270,7 @@ class SqlBuilderCTASTest extends SnowflakeBaseTestCase
             ),
         );
 
-        self::assertSame(
+        self::assertSqlSame(
             [
             [
                 'col1' => '1',
