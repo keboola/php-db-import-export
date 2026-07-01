@@ -385,6 +385,16 @@ class SnowflakeBaseTestCase extends ImportExportBaseTest
             . getenv('SUITE');
     }
 
+    protected static function getTestObjectSuffix(): string
+    {
+        $suite = getenv('SUITE');
+        if ($suite === false || $suite === '') {
+            return '';
+        }
+
+        return preg_replace('/[^a-zA-Z0-9_]/', '_', $suite) . '_';
+    }
+
     protected function cleanSchema(string $schemaName): void
     {
         $this->connection->executeQuery(

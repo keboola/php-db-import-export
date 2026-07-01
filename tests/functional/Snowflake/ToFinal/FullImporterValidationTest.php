@@ -21,15 +21,19 @@ use Tests\Keboola\Db\ImportExportFunctional\Snowflake\SnowflakeBaseTestCase;
 class FullImporterValidationTest extends SnowflakeBaseTestCase
 {
     public const TESTS_PREFIX = 'import_export_test_';
-    public const TEST_SCHEMA = self::TESTS_PREFIX . 'schema';
     public const TEST_STAGING_TABLE = '__temp_stagingTable';
     public const TEST_DESTINATION_TABLE = self::TESTS_PREFIX . 'destination';
+
+    private static function getTestSchema(): string
+    {
+        return self::TESTS_PREFIX . self::getTestObjectSuffix() . 'schema';
+    }
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->cleanSchema(self::TEST_SCHEMA);
-        $this->createSchema(self::TEST_SCHEMA);
+        $this->cleanSchema(self::getTestSchema());
+        $this->createSchema(self::getTestSchema());
     }
 
     /**
@@ -57,7 +61,7 @@ class FullImporterValidationTest extends SnowflakeBaseTestCase
         }
 
         return new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection($columnDefinitions),
@@ -90,7 +94,7 @@ class FullImporterValidationTest extends SnowflakeBaseTestCase
         }
 
         return new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_DESTINATION_TABLE,
             false,
             new ColumnCollection($columnDefinitions),
