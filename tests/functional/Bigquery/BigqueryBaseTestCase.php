@@ -23,7 +23,6 @@ use Tests\Keboola\Db\ImportExportFunctional\ImportExportBaseTest;
 class BigqueryBaseTestCase extends ImportExportBaseTest
 {
     public const TESTS_PREFIX = 'ieLibTest_';
-    public const TEST_DATABASE = self::TESTS_PREFIX . 'refTableDatabase';
     public const TABLE_GENERIC = self::TESTS_PREFIX . 'refTab';
     protected const BIGQUERY_SOURCE_DATABASE_NAME = 'tests_source';
     protected const BIGQUERY_DESTINATION_DATABASE_NAME = 'tests_destination';
@@ -86,22 +85,52 @@ class BigqueryBaseTestCase extends ImportExportBaseTest
             );
     }
 
+    protected static function getTestDatabase(): string
+    {
+        $suffix = self::getTestObjectSuffix();
+        return self::TESTS_PREFIX . 'refTableDatabase' . ($suffix === '' ? '' : '_' . $suffix);
+    }
+
     protected static function getSourceDbName(): string
     {
-        /** @var string $suitePrefixEnv */
-        $suitePrefixEnv = getenv('SUITE') ?: '';
-        return self::BIGQUERY_SOURCE_DATABASE_NAME
-            . '_'
-            . str_replace('-', '_', $suitePrefixEnv);
+        $suffix = self::getTestObjectSuffix();
+        return self::BIGQUERY_SOURCE_DATABASE_NAME . ($suffix === '' ? '' : '_' . $suffix);
     }
 
     protected static function getDestinationDbName(): string
     {
-        /** @var string $suitePrefixEnv */
-        $suitePrefixEnv = getenv('SUITE') ?: '';
-        return self::BIGQUERY_DESTINATION_DATABASE_NAME
-            . '_'
-            . str_replace('-', '_', $suitePrefixEnv);
+        $suffix = self::getTestObjectSuffix();
+        return self::BIGQUERY_DESTINATION_DATABASE_NAME . ($suffix === '' ? '' : '_' . $suffix);
+    }
+
+    /**
+     * Builds the run- and suite-unique object-name suffix (no surrounding separators).
+     *
+     * BUILD_PREFIX (`ci-<github.run_id>`) keeps datasets isolated across
+     * parallel CI runs on different PRs; SUITE keeps them isolated across the
+     * storage-type jobs within a single run. Hyphens (and any other illegal
+     * chars) are normalized to underscores because BigQuery dataset identifiers
+     * only allow [A-Za-z0-9_].
+     */
+    protected static function getTestObjectSuffix(): string
+    {
+        $parts = [];
+        $buildPrefix = getenv('BUILD_PREFIX');
+        if ($buildPrefix !== false && $buildPrefix !== '') {
+            $parts[] = self::sanitizeObjectNamePart($buildPrefix);
+        }
+
+        $suite = getenv('SUITE');
+        if ($suite !== false && $suite !== '') {
+            $parts[] = self::sanitizeObjectNamePart($suite);
+        }
+
+        return implode('_', $parts);
+    }
+
+    private static function sanitizeObjectNamePart(string $value): string
+    {
+        return (string) preg_replace('/[^a-zA-Z0-9_]/', '_', $value);
     }
 
     protected function initTable(string $tableName, string $dbName = ''): void
