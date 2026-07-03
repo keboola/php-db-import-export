@@ -20,8 +20,8 @@ class StageImportTest extends BigqueryBaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->cleanDatabase(self::TEST_DATABASE);
-        $this->createDatabase(self::TEST_DATABASE);
+        $this->cleanDatabase(self::getTestDatabase());
+        $this->createDatabase(self::getTestDatabase());
     }
 
     public function testSimpleStageImport(): void
@@ -33,7 +33,7 @@ class StageImportTest extends BigqueryBaseTestCase
     `first_name` STRING(100),
     `last_name` STRING(100)
 );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
             ),
         );
@@ -42,7 +42,7 @@ class StageImportTest extends BigqueryBaseTestCase
         $importer = new ToStageImporter($this->bqClient);
         $ref = new BigqueryTableReflection(
             $this->bqClient,
-            self::TEST_DATABASE,
+            self::getTestDatabase(),
             self::TABLE_GENERIC,
         );
 
@@ -69,7 +69,7 @@ class StageImportTest extends BigqueryBaseTestCase
     `first_name` STRING(100),
     `last_name` STRING(100)
 );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
             ),
         );
@@ -78,7 +78,7 @@ class StageImportTest extends BigqueryBaseTestCase
         $importer = new ToStageImporter($this->bqClient);
         $ref = new BigqueryTableReflection(
             $this->bqClient,
-            self::TEST_DATABASE,
+            self::getTestDatabase(),
             self::TABLE_GENERIC,
         );
 
@@ -103,7 +103,7 @@ class StageImportTest extends BigqueryBaseTestCase
                 'last_name' => null,
             ],
             ],
-            $this->fetchTable(self::TEST_DATABASE, self::TABLE_GENERIC),
+            $this->fetchTable(self::getTestDatabase(), self::TABLE_GENERIC),
         );
     }
 
@@ -116,7 +116,7 @@ class StageImportTest extends BigqueryBaseTestCase
     `first_name` STRING(100),
     `last_name` STRING(100)
 );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
             ),
         );
@@ -125,7 +125,7 @@ class StageImportTest extends BigqueryBaseTestCase
         $importer = new ToStageImporter($this->bqClient);
         $ref = new BigqueryTableReflection(
             $this->bqClient,
-            self::TEST_DATABASE,
+            self::getTestDatabase(),
             self::TABLE_GENERIC,
         );
 
@@ -150,7 +150,7 @@ class StageImportTest extends BigqueryBaseTestCase
                 'last_name' => '3',
             ],
             ],
-            $this->fetchTable(self::TEST_DATABASE, self::TABLE_GENERIC),
+            $this->fetchTable(self::getTestDatabase(), self::TABLE_GENERIC),
         );
     }
 
@@ -194,7 +194,7 @@ class StageImportTest extends BigqueryBaseTestCase
         `INBOUND_DATA_TRANSFER_BYTES` STRING(4000),
         `CREDITS_USED_CLOUD_SERVICES` STRING(4000),
 );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
             ),
         );
@@ -203,7 +203,7 @@ class StageImportTest extends BigqueryBaseTestCase
         $importer = new ToStageImporter($this->bqClient);
         $ref = new BigqueryTableReflection(
             $this->bqClient,
-            self::TEST_DATABASE,
+            self::getTestDatabase(),
             self::TABLE_GENERIC,
         );
 
@@ -231,7 +231,7 @@ class StageImportTest extends BigqueryBaseTestCase
       `id` INT64 NOT NULL,
       `first_name` STRING(1)
      );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
             ),
         );
@@ -240,7 +240,7 @@ class StageImportTest extends BigqueryBaseTestCase
         $importer = new ToStageImporter($this->bqClient);
         $ref = new BigqueryTableReflection(
             $this->bqClient,
-            self::TEST_DATABASE,
+            self::getTestDatabase(),
             self::TABLE_GENERIC,
         );
 
@@ -258,7 +258,7 @@ class StageImportTest extends BigqueryBaseTestCase
             self::fail('should fail');
         } catch (BigqueryException $e) {
             // nor target table nor LOG/ERR tables should be present
-            $scheRef = new BigquerySchemaReflection($this->bqClient, self::TEST_DATABASE);
+            $scheRef = new BigquerySchemaReflection($this->bqClient, self::getTestDatabase());
             $tables = $scheRef->getTablesNames();
             self::assertCount(1, $tables); // table should be present, only import fails
         }
@@ -275,7 +275,7 @@ class StageImportTest extends BigqueryBaseTestCase
       `name` STRING(100) NOT NULL,
       `price` STRING(100)
      );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
             ),
         );
@@ -284,7 +284,7 @@ class StageImportTest extends BigqueryBaseTestCase
         $importer = new ToStageImporter($this->bqClient);
         $ref = new BigqueryTableReflection(
             $this->bqClient,
-            self::TEST_DATABASE,
+            self::getTestDatabase(),
             self::TABLE_GENERIC,
         );
 
@@ -311,11 +311,11 @@ class StageImportTest extends BigqueryBaseTestCase
         $destinationTable = self::TABLE_GENERIC . '_dest';
 
         $destinationPath = [
-            BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+            BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
             BigqueryQuote::quoteSingleIdentifier($destinationTable),
         ];
         $sourcePath = [
-            BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+            BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
             BigqueryQuote::quoteSingleIdentifier($sourceTable),
         ];
 
@@ -360,7 +360,7 @@ class StageImportTest extends BigqueryBaseTestCase
         $importer = new ToStageImporter($this->bqClient);
         $ref = new BigqueryTableReflection(
             $this->bqClient,
-            self::TEST_DATABASE,
+            self::getTestDatabase(),
             $destinationTable,
         );
 
@@ -368,7 +368,7 @@ class StageImportTest extends BigqueryBaseTestCase
             // load SOURCE which contains NULL to DESTINATION which has NOT NULL column
             $importer->importToStagingTable(
                 new Table(
-                    self::TEST_DATABASE,
+                    self::getTestDatabase(),
                     $sourceTable,
                     [],
                     [],
@@ -396,7 +396,7 @@ class StageImportTest extends BigqueryBaseTestCase
     `first_name` STRING(100),
     `last_name` STRING(100)
 );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
             ),
         );
@@ -405,9 +405,9 @@ class StageImportTest extends BigqueryBaseTestCase
         $query = $this->bqClient->query(
             sprintf(
                 'CREATE TABLE %s.%s AS SELECT * FROM %s.%s;',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC.'_CTAS'),
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
             ),
         );
@@ -416,7 +416,7 @@ class StageImportTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`first_name`,`last_name`) VALUES (1,\'test\',\'test\')',
-                    BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                    BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                     BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC.'_CTAS'),
                 ),
             ),
@@ -425,13 +425,13 @@ class StageImportTest extends BigqueryBaseTestCase
         $importer = new ToStageImporter($this->bqClient);
         $ref = new BigqueryTableReflection(
             $this->bqClient,
-            self::TEST_DATABASE,
+            self::getTestDatabase(),
             self::TABLE_GENERIC,
         );
 
         $state = $importer->importToStagingTable(
             new Table(
-                self::TEST_DATABASE,
+                self::getTestDatabase(),
                 self::TABLE_GENERIC.'_CTAS',
                 [],
                 [],
@@ -454,7 +454,7 @@ class StageImportTest extends BigqueryBaseTestCase
     `first_name` STRING(100),
     `last_name` STRING(100)
 );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
             ),
         );
@@ -467,7 +467,7 @@ class StageImportTest extends BigqueryBaseTestCase
     `first_name` STRING(3),
     `last_name` STRING(3)
 );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC.'_DEST'),
             ),
         );
@@ -476,7 +476,7 @@ class StageImportTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`first_name`,`last_name`) VALUES (1,\'test\',\'test\')',
-                    BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                    BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                     BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
                 ),
             ),
@@ -485,7 +485,7 @@ class StageImportTest extends BigqueryBaseTestCase
         $importer = new ToStageImporter($this->bqClient);
         $ref = new BigqueryTableReflection(
             $this->bqClient,
-            self::TEST_DATABASE,
+            self::getTestDatabase(),
             self::TABLE_GENERIC.'_DEST',
         );
 
@@ -493,7 +493,7 @@ class StageImportTest extends BigqueryBaseTestCase
         $this->expectExceptionMessage('Field first_name: STRING(3) has maximum length 3 but got a value with length 4');
         $importer->importToStagingTable(
             new Table(
-                self::TEST_DATABASE,
+                self::getTestDatabase(),
                 self::TABLE_GENERIC,
                 [],
                 [],
@@ -514,7 +514,7 @@ class StageImportTest extends BigqueryBaseTestCase
     `first_name` STRING(100),
     `last_name` STRING(100)
 );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
             ),
         );
@@ -527,7 +527,7 @@ class StageImportTest extends BigqueryBaseTestCase
     `first_name` STRING(5),
     `last_name` STRING(5)
 );',
-                BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                 BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC.'_DEST'),
             ),
         );
@@ -536,7 +536,7 @@ class StageImportTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`first_name`,`last_name`) VALUES (1,\'test\',\'test\')',
-                    BigqueryQuote::quoteSingleIdentifier(self::TEST_DATABASE),
+                    BigqueryQuote::quoteSingleIdentifier(self::getTestDatabase()),
                     BigqueryQuote::quoteSingleIdentifier(self::TABLE_GENERIC),
                 ),
             ),
@@ -545,13 +545,13 @@ class StageImportTest extends BigqueryBaseTestCase
         $importer = new ToStageImporter($this->bqClient);
         $ref = new BigqueryTableReflection(
             $this->bqClient,
-            self::TEST_DATABASE,
+            self::getTestDatabase(),
             self::TABLE_GENERIC.'_DEST',
         );
 
         $state = $importer->importToStagingTable(
             new Table(
-                self::TEST_DATABASE,
+                self::getTestDatabase(),
                 self::TABLE_GENERIC,
                 [],
                 [],

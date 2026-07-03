@@ -23,17 +23,53 @@ use Throwable;
 class SqlBuildTest extends BigqueryBaseTestCase
 {
     public const TESTS_PREFIX = 'import_export_test_';
-    public const TEST_DB = self::TESTS_PREFIX . 'schema';
-    public const TEST_DB_QUOTED = '`' . self::TEST_DB . '`';
     public const TEST_STAGING_TABLE = 'stagingTable';
     public const TEST_STAGING_TABLE_QUOTED = '`stagingTable`';
     public const TEST_TABLE = self::TESTS_PREFIX . 'test';
-    public const TEST_TABLE_IN_DB = self::TEST_DB_QUOTED . '.' . self::TEST_TABLE_QUOTED;
     public const TEST_TABLE_QUOTED = '`' . self::TEST_TABLE . '`';
+
+    private static function getTestDb(): string
+    {
+        $suffix = self::getTestObjectSuffix();
+        return self::TESTS_PREFIX . ($suffix === '' ? '' : $suffix . '_') . 'schema';
+    }
+
+    private static function getTestDbQuoted(): string
+    {
+        return BigqueryQuote::quoteSingleIdentifier(self::getTestDb());
+    }
+
+    private static function getTestTableInDb(): string
+    {
+        return self::getTestDbQuoted() . '.' . self::TEST_TABLE_QUOTED;
+    }
+
+    /**
+     * Rewrites the hard-coded schema literal in an expected SQL string to the
+     * run-unique dataset name, so assertions keep matching once datasets are
+     * isolated per CI run (see BigqueryBaseTestCase::getTestObjectSuffix()).
+     */
+    private static function expectedSql(string $sql): string
+    {
+        return str_replace(
+            BigqueryQuote::quoteSingleIdentifier(self::TESTS_PREFIX . 'schema'),
+            self::getTestDbQuoted(),
+            $sql,
+        );
+    }
+
+    private static function assertSqlEquals(mixed $expected, mixed $actual, string $message = ''): void
+    {
+        if (is_string($expected)) {
+            $expected = self::expectedSql($expected);
+        }
+
+        self::assertEquals($expected, $actual, $message);
+    }
 
     protected function dropTestDb(): void
     {
-        $this->cleanDatabase(self::TEST_DB);
+        $this->cleanDatabase(self::getTestDb());
     }
 
     protected function getBuilder(): SqlBuilder
@@ -49,7 +85,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
     protected function createTestDb(): void
     {
-        $this->createDatabase(self::TEST_DB);
+        $this->createDatabase(self::getTestDb());
     }
 
     public function testGetDedupCommand(): void
@@ -67,7 +103,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`pk1`,`pk2`,`col1`,`col2`) VALUES (\'1\',\'1\',\'1\',\'1\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_STAGING_TABLE_QUOTED,
                 ),
             ),
@@ -76,7 +112,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`pk1`,`pk2`,`col1`,`col2`) VALUES (\'1\',\'1\',\'1\',\'1\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_STAGING_TABLE_QUOTED,
                 ),
             ),
@@ -85,7 +121,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`pk1`,`pk2`,`col1`,`col2`) VALUES (\'2\',\'2\',\'2\',\'2\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_STAGING_TABLE_QUOTED,
                 ),
             ),
@@ -96,7 +132,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
                 $this->bqClient->query(
                     sprintf(
                         'INSERT INTO %s.%s(`pk1`,`pk2`,`col1`,`col2`) VALUES (\'2\',\'2\',\'\',NULL)',
-                        self::TEST_DB_QUOTED,
+                        self::getTestDbQuoted(),
                         self::TEST_STAGING_TABLE_QUOTED,
                     ),
                 ),
@@ -124,11 +160,11 @@ class SqlBuildTest extends BigqueryBaseTestCase
     public function testGetDropTableIfExistsCommand(): void
     {
         $this->createTestDb();
-        $this->assertTableNotExists(self::TEST_DB, self::TEST_TABLE);
+        $this->assertTableNotExists(self::getTestDb(), self::TEST_TABLE);
 
         // check that it cannot find non-existing table
-        $sql = $this->getBuilder()->getTableExistsCommand(self::TEST_DB, self::TEST_TABLE);
-        self::assertEquals(
+        $sql = $this->getBuilder()->getTableExistsCommand(self::getTestDb(), self::TEST_TABLE);
+        self::assertSqlEquals(
         // phpcs:ignore
             "SELECT COUNT(*) AS count FROM `import_export_test_schema`.INFORMATION_SCHEMA.TABLES WHERE `table_type` != 'VIEW' AND table_name = 'import_export_test_test';", $sql
         );
@@ -138,8 +174,8 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // try to drop not existing table
         try {
-            $sql = $this->getBuilder()->getDropTableUnsafe(self::TEST_DB, self::TEST_TABLE);
-            self::assertEquals(
+            $sql = $this->getBuilder()->getDropTableUnsafe(self::getTestDb(), self::TEST_TABLE);
+            self::assertSqlEquals(
             // phpcs:ignore
                 'DROP TABLE `import_export_test_schema`.`import_export_test_test`',
                 $sql,
@@ -151,20 +187,20 @@ class SqlBuildTest extends BigqueryBaseTestCase
         }
 
         // create table
-        $this->initSingleTable(self::TEST_DB, self::TEST_TABLE);
+        $this->initSingleTable(self::getTestDb(), self::TEST_TABLE);
 
         // check that the table exists already
-        $sql = $this->getBuilder()->getTableExistsCommand(self::TEST_DB, self::TEST_TABLE);
+        $sql = $this->getBuilder()->getTableExistsCommand(self::getTestDb(), self::TEST_TABLE);
         $queryResults = $this->bqClient->runQuery($this->bqClient->query($sql));
         $current = (array) $queryResults->getIterator()->current();
         $this->assertEquals(1, $current['count']);
 
         // drop existing table
-        $sql = $this->getBuilder()->getDropTableUnsafe(self::TEST_DB, self::TEST_TABLE);
+        $sql = $this->getBuilder()->getDropTableUnsafe(self::getTestDb(), self::TEST_TABLE);
         $this->bqClient->runQuery($this->bqClient->query($sql));
 
         // check that the table doesn't exist anymore
-        $sql = $this->getBuilder()->getTableExistsCommand(self::TEST_DB, self::TEST_TABLE);
+        $sql = $this->getBuilder()->getTableExistsCommand(self::getTestDb(), self::TEST_TABLE);
         $queryResults = $this->bqClient->runQuery($this->bqClient->query($sql));
         $current = (array) $queryResults->getIterator()->current();
         $this->assertEquals(0, $current['count']);
@@ -196,7 +232,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // create fake stage and say that there is less columns
         $fakeStage = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -220,7 +256,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             '2020-01-01 00:00:00',
         );
 
-        self::assertEquals($expectedSql, $sql);
+        self::assertSqlEquals($expectedSql, $sql);
 
         $out = $this->bqClient->runQuery($this->bqClient->query($sql));
         self::assertEquals(4, $out->info()['numDmlAffectedRows']);
@@ -229,7 +265,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'SELECT * FROM %s.%s',
-                    BigqueryQuote::quoteSingleIdentifier(self::TEST_DB),
+                    BigqueryQuote::quoteSingleIdentifier(self::getTestDb()),
                     BigqueryQuote::quoteSingleIdentifier(self::TEST_TABLE),
                 ),
             ),
@@ -290,7 +326,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         }
 
         $tableDefinition = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             false,
             new ColumnCollection($columns),
@@ -353,7 +389,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         $this->createStagingTableWithData(true);
         // create fake stage and say that there is less columns
         $fakeStage = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -375,7 +411,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             ),
             '2020-01-01 00:00:00',
         );
-        self::assertEquals($expectedSql, $sql);
+        self::assertSqlEquals($expectedSql, $sql);
         $out = $this->bqClient->runQuery($this->bqClient->query($sql));
         self::assertEquals(4, $out->info()['numDmlAffectedRows']);
 
@@ -383,7 +419,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'SELECT * FROM %s',
-                    self::TEST_TABLE_IN_DB,
+                    self::getTestTableInDb(),
                 ),
             ),
         );
@@ -450,7 +486,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         $this->createStagingTableWithData(true);
         // create fake stage and say that there is less columns
         $fakeStage = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -472,7 +508,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             ),
             '2020-01-01 00:00:00',
         );
-        self::assertEquals($expectedSql, $sql);
+        self::assertSqlEquals($expectedSql, $sql);
         $out = $this->bqClient->runQuery($this->bqClient->query($sql));
         self::assertEquals(4, $out->info()['numDmlAffectedRows']);
 
@@ -480,7 +516,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'SELECT * FROM %s',
-                    self::TEST_TABLE_IN_DB,
+                    self::getTestTableInDb(),
                 ),
             ),
         );
@@ -509,7 +545,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             new BigqueryColumn('col2', new Bigquery(Bigquery::TYPE_TIMESTAMP, ['nullable' => true])),
         ];
         $destination = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             false,
             new ColumnCollection($destinationColumns),
@@ -525,7 +561,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         // Staging table with STRING data (STRING_TABLE strategy)
         $this->createStagingTableWithData(true);
         $fakeStage = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -537,7 +573,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // Fake destination matching staging columns: col1 STRING, col2 TIMESTAMP
         $fakeDestination = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -563,7 +599,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // col1: no convert, STRING dest → CAST(COALESCE(...) as STRING)
         // col2: convert, TIMESTAMP dest → CAST(NULLIF(...) AS TIMESTAMP)
-        self::assertEquals(
+        self::assertSqlEquals(
             // phpcs:ignore
             'INSERT INTO `import_export_test_schema`.`import_export_test_test` (`col1`, `col2`) SELECT CAST(COALESCE(`src`.`col1`, \'\') as STRING) AS `col1`,CAST(NULLIF(`src`.`col2`, \'\') AS TIMESTAMP) AS `col2` FROM `import_export_test_schema`.`stagingTable` AS `src`',
             $sql,
@@ -579,11 +615,11 @@ class SqlBuildTest extends BigqueryBaseTestCase
         $this->createTestDb();
         $this->createStagingTableWithData();
 
-        $ref = new BigqueryTableReflection($this->bqClient, self::TEST_DB, self::TEST_STAGING_TABLE);
+        $ref = new BigqueryTableReflection($this->bqClient, self::getTestDb(), self::TEST_STAGING_TABLE);
         self::assertEquals(3, $ref->getRowsCount());
 
-        $sql = $this->getBuilder()->getTruncateTable(self::TEST_DB, self::TEST_STAGING_TABLE);
-        self::assertEquals(
+        $sql = $this->getBuilder()->getTruncateTable(self::getTestDb(), self::TEST_STAGING_TABLE);
+        self::assertSqlEquals(
             'TRUNCATE TABLE `import_export_test_schema`.`stagingTable`',
             $sql,
         );
@@ -623,7 +659,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         $this->createStagingTableWithData(true);
         // create fake destination and say that there is pk on col1
         $fakeDestination = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -634,7 +670,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         );
         // create fake stage and say that there is less columns
         $fakeStage = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -648,13 +684,13 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`col1`,`col2`) VALUES (\'1\',\'2\',\'1\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_TABLE_QUOTED,
                 ),
             ),
         );
 
-        $result = $this->fetchTable(self::TEST_DB_QUOTED, self::TEST_TABLE_QUOTED);
+        $result = $this->fetchTable(self::getTestDbQuoted(), self::TEST_TABLE_QUOTED);
         self::assertEquals(
             [
             [
@@ -679,10 +715,10 @@ class SqlBuildTest extends BigqueryBaseTestCase
             ),
             '2020-01-01 00:00:00',
         );
-        self::assertEquals($expectedSql, $sql);
+        self::assertSqlEquals($expectedSql, $sql);
         $this->bqClient->runQuery($this->bqClient->query($sql));
 
-        $result = $this->fetchTable(self::TEST_DB_QUOTED, self::TEST_TABLE_QUOTED);
+        $result = $this->fetchTable(self::getTestDbQuoted(), self::TEST_TABLE_QUOTED);
         self::assertEquals(
             [
             [
@@ -726,7 +762,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         $this->createStagingTableWithData(true);
         // create fake destination and say that there is pk on col1
         $fakeDestination = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -737,7 +773,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         );
         // create fake stage and say that there is less columns
         $fakeStage = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -751,7 +787,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`col1`,`col2`) VALUES (\'1\',\'\',\'1\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_TABLE_QUOTED,
                 ),
             ),
@@ -760,13 +796,13 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`col1`,`col2`) VALUES (\'1\',\'2\',\'\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_TABLE_QUOTED,
                 ),
             ),
         );
 
-        $result = $this->fetchTable(self::TEST_DB_QUOTED, self::TEST_TABLE_QUOTED);
+        $result = $this->fetchTable(self::getTestDbQuoted(), self::TEST_TABLE_QUOTED);
 
         self::assertEqualsCanonicalizing(
             [
@@ -793,10 +829,10 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $options,
             '2020-01-01 00:00:00',
         );
-        self::assertEquals($expectedSql, $sql);
+        self::assertSqlEquals($expectedSql, $sql);
         $this->bqClient->runQuery($this->bqClient->query($sql));
 
-        $result = $this->fetchTable(self::TEST_DB_QUOTED, self::TEST_TABLE_QUOTED);
+        $result = $this->fetchTable(self::getTestDbQuoted(), self::TEST_TABLE_QUOTED);
 
         self::assertEqualsCanonicalizing(
             [
@@ -849,7 +885,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // create fake destination and say that there is pk on col1
         $fakeDestination = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -860,7 +896,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         );
         // create fake stage and say that there is less columns
         $fakeStage = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -874,7 +910,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`col1`,`col2`,`_timestamp`) VALUES (\'1\',\'\',\'1\',\'%s\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_TABLE_QUOTED,
                     $timestampInit->format(DateTimeHelper::FORMAT),
                 ),
@@ -884,7 +920,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`col1`,`col2`,`_timestamp`) VALUES (\'1\',\'2\',\'\',\'%s\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_TABLE_QUOTED,
                     $timestampInit->format(DateTimeHelper::FORMAT),
                 ),
@@ -906,7 +942,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
                 '_timestamp' => $timestampInit->format(DateTimeHelper::FORMAT),
             ],
             ],
-            $this->fetchTable(self::TEST_DB_QUOTED, self::TEST_TABLE_QUOTED),
+            $this->fetchTable(self::getTestDbQuoted(), self::TEST_TABLE_QUOTED),
         );
 
         // use timestamp
@@ -924,9 +960,9 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $timestampSet->format(DateTimeHelper::FORMAT),
         );
 
-        self::assertEquals($expectedSql, $sql);
+        self::assertSqlEquals($expectedSql, $sql);
         $this->bqClient->runQuery($this->bqClient->query($sql));
-        $result = $this->fetchTable(self::TEST_DB_QUOTED, self::TEST_TABLE_QUOTED);
+        $result = $this->fetchTable(self::getTestDbQuoted(), self::TEST_TABLE_QUOTED);
 
         foreach ($result as $item) {
             self::assertArrayHasKey('id', $item);
@@ -966,7 +1002,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`pk1`,`pk2`,`col1`,`col2`) VALUES (\'3\',\'3\',\'\',NULL)',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_STAGING_TABLE_QUOTED,
                 ),
             ),
@@ -974,7 +1010,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // create fake destination and say that there is pk on col1
         $fakeDestination = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -985,7 +1021,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         );
         // create fake stage and say that there is less columns
         $fakeStage = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -999,7 +1035,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`col1`,`col2`,`_timestamp`) VALUES (\'1\',\'1\',\'1\',\'%s\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_TABLE_QUOTED,
                     $timestampInit->format(DateTimeHelper::FORMAT),
                 ),
@@ -1009,7 +1045,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`col1`,`col2`,`_timestamp`) VALUES (\'3\',\'3\',NULL,\'%s\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_TABLE_QUOTED,
                     $timestampInit->format(DateTimeHelper::FORMAT),
                 ),
@@ -1031,7 +1067,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
                 '_timestamp' => $timestampInit->format(DateTimeHelper::FORMAT),
             ],
             ],
-            $this->fetchTable(self::TEST_DB_QUOTED, self::TEST_TABLE_QUOTED),
+            $this->fetchTable(self::getTestDbQuoted(), self::TEST_TABLE_QUOTED),
         );
 
         // use timestamp
@@ -1051,9 +1087,9 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $timestampSet->format(DateTimeHelper::FORMAT),
         );
 
-        self::assertEquals($expectedSQL, $sql);
+        self::assertSqlEquals($expectedSQL, $sql);
         $this->bqClient->runQuery($this->bqClient->query($sql));
-        $result = $this->fetchTable(self::TEST_DB_QUOTED, self::TEST_TABLE_QUOTED);
+        $result = $this->fetchTable(self::getTestDbQuoted(), self::TEST_TABLE_QUOTED);
 
         $assertTimestamp = $timestampInit;
         if ($expectedTimestampChange) {
@@ -1110,7 +1146,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         $this->createTestDb();
 
         $tableDefinition = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             false,
             new ColumnCollection([
@@ -1143,7 +1179,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             ),
         );
         $stagingTableDefinition = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             false,
             new ColumnCollection([
@@ -1187,7 +1223,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->getSimpleImportOptions(),
         );
 
-        self::assertEquals($expectedSql, $sql);
+        self::assertSqlEquals($expectedSql, $sql);
         $this->bqClient->runQuery($this->bqClient->query($sql));
 
         $result = $this->fetchTable($stagingTableDefinition->getSchemaName(), $stagingTableDefinition->getTableName());
@@ -1217,7 +1253,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // Create real destination table with typed col1 (INT64)
         $tableDefinition = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             false,
             new ColumnCollection([
@@ -1239,7 +1275,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // Fake destination: col1 is INT64 (PK), col2 is STRING
         $fakeDestination = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -1250,7 +1286,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         );
         // Fake stage (always STRING from CSV)
         $fakeStage = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -1265,7 +1301,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`col1`,`col2`) VALUES (\'1\',2,\'1\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_TABLE_QUOTED,
                 ),
             ),
@@ -1287,7 +1323,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // CAST must be applied: SET col1=CAST(...AS INT64), PK WHERE CAST(dest.col1 AS STRING), comparison CAST
         // col2 is STRING so no CAST
-        self::assertEquals(
+        self::assertSqlEquals(
             // phpcs:ignore
             'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = CAST(COALESCE(`src`.`col1`, \'\') AS INT64), `col2` = COALESCE(`src`.`col2`, \'\') FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE CAST(`dest`.`col1` AS STRING) = COALESCE(`src`.`col1`, \'\')  AND (CAST(`dest`.`col1` AS STRING) != COALESCE(`src`.`col1`, \'\') OR `dest`.`col2` != COALESCE(`src`.`col2`, \'\'))',
             $sql,
@@ -1295,7 +1331,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         $this->bqClient->runQuery($this->bqClient->query($sql));
 
-        $result = $this->fetchTable(self::TEST_DB_QUOTED, self::TEST_TABLE_QUOTED);
+        $result = $this->fetchTable(self::getTestDbQuoted(), self::TEST_TABLE_QUOTED);
         // col1=2 matched staging col1='2', col2 updated from '1' to '2'
         self::assertCount(1, $result);
         self::assertSame('1', $result[0]['id']);
@@ -1311,7 +1347,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // Create real destination table with typed col1 (INT64)
         $tableDefinition = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             false,
             new ColumnCollection([
@@ -1332,7 +1368,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // Fake destination: col1 is INT64 (PK), col2 is STRING
         $fakeDestination = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -1342,7 +1378,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             ['col1'],
         );
         $fakeStage = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -1356,7 +1392,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
             $this->bqClient->query(
                 sprintf(
                     'INSERT INTO %s.%s(`id`,`col1`,`col2`) VALUES (\'1\',2,\'1\')',
-                    self::TEST_DB_QUOTED,
+                    self::getTestDbQuoted(),
                     self::TEST_TABLE_QUOTED,
                 ),
             ),
@@ -1377,7 +1413,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         );
 
         // col1 SET uses IF+CAST(..AS INT64), col2 no CAST (STRING dest)
-        self::assertEquals(
+        self::assertSqlEquals(
             // phpcs:ignore
             'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = CAST(IF(`src`.`col1` = \'\', NULL, `src`.`col1`) AS INT64), `col2` = COALESCE(`src`.`col2`, \'\') FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE CAST(`dest`.`col1` AS STRING) = COALESCE(`src`.`col1`, \'\')  AND (CAST(`dest`.`col1` AS STRING) != COALESCE(`src`.`col1`, \'\') OR `dest`.`col2` != COALESCE(`src`.`col2`, \'\'))',
             $sql,
@@ -1395,7 +1431,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // Destination with typed pk1 (INT64) and STRING pk2
         $tableDefinition = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_TABLE,
             false,
             new ColumnCollection([
@@ -1429,7 +1465,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
 
         // Staging table (all STRING, as from CSV)
         $stagingTableDefinition = new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             false,
             new ColumnCollection([
@@ -1474,7 +1510,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         );
 
         // pk1 is INT64 → CAST applied, pk2 is STRING → no CAST
-        self::assertEquals(
+        self::assertSqlEquals(
             // phpcs:ignore
             'DELETE `import_export_test_schema`.`stagingTable` AS `src` WHERE EXISTS (SELECT * FROM `import_export_test_schema`.`import_export_test_test` AS `dest` WHERE CAST(`dest`.`pk1` AS STRING) = COALESCE(`src`.`pk1`, \'\') AND `dest`.`pk2` = COALESCE(`src`.`pk2`, \'\') )',
             $sql,
@@ -1501,7 +1537,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
     private function getStagingTableDefinition(): BigqueryTableDefinition
     {
         return new BigqueryTableDefinition(
-            self::TEST_DB,
+            self::getTestDb(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
