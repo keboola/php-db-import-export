@@ -26,17 +26,43 @@ use Tests\Keboola\Db\ImportExportFunctional\Snowflake\SnowflakeBaseTestCase;
 class SqlBuilderTest extends SnowflakeBaseTestCase
 {
     public const TESTS_PREFIX = 'import_export_test_';
-    public const TEST_SCHEMA = self::TESTS_PREFIX . 'schema';
-    public const TEST_SCHEMA_QUOTED = '"' . self::TEST_SCHEMA . '"';
     public const TEST_STAGING_TABLE = '__temp_stagingTable';
     public const TEST_STAGING_TABLE_QUOTED = '"__temp_stagingTable"';
     public const TEST_TABLE = self::TESTS_PREFIX . 'test';
-    public const TEST_TABLE_IN_SCHEMA = self::TEST_SCHEMA_QUOTED . '.' . self::TEST_TABLE_QUOTED;
     public const TEST_TABLE_QUOTED = '"' . self::TEST_TABLE . '"';
+
+    private static function getTestSchema(): string
+    {
+        return self::TESTS_PREFIX . self::getTestObjectSuffix() . 'schema';
+    }
+
+    private static function getTestSchemaQuoted(): string
+    {
+        return SnowflakeQuote::quoteSingleIdentifier(self::getTestSchema());
+    }
+
+    private static function getTestTableInSchema(): string
+    {
+        return self::getTestSchemaQuoted() . '.' . self::TEST_TABLE_QUOTED;
+    }
+
+    private static function expectedSql(string $sql): string
+    {
+        return str_replace('"import_export_test_schema"', self::getTestSchemaQuoted(), $sql);
+    }
+
+    private static function assertSqlEquals(mixed $expected, mixed $actual, string $message = ''): void
+    {
+        if (is_string($expected)) {
+            $expected = self::expectedSql($expected);
+        }
+
+        self::assertEquals($expected, $actual, $message);
+    }
 
     protected function dropTestSchema(): void
     {
-        $this->cleanSchema(self::TEST_SCHEMA);
+        $this->cleanSchema(self::getTestSchema());
     }
 
     protected function getBuilder(): SqlBuilder
@@ -52,7 +78,7 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
 
     protected function createTestSchema(): void
     {
-        $this->createSchema(self::TEST_SCHEMA);
+        $this->createSchema(self::getTestSchema());
     }
 
     public function testGetDedupCommand(): void
@@ -61,7 +87,7 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
         $stageDef = $this->createStagingTableWithData();
 
         $deduplicationDef = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             '__temp_tempTable',
             true,
             new ColumnCollection([
@@ -81,7 +107,7 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
             $deduplicationDef,
             $deduplicationDef->getPrimaryKeysNames(),
         );
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'INSERT INTO "import_export_test_schema"."__temp_tempTable" ("col1", "col2") SELECT a."col1",a."col2" FROM (SELECT "col1", "col2", ROW_NUMBER() OVER (PARTITION BY "pk1","pk2" ORDER BY "pk1","pk2") AS "_row_number_" FROM "import_export_test_schema"."__temp_stagingTable") AS a WHERE a."_row_number_" = 1',
             $sql,
@@ -107,21 +133,21 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s.%s("pk1","pk2","col1","col2") VALUES (1,1,\'1\',\'1\')',
-                self::TEST_SCHEMA_QUOTED,
+                self::getTestSchemaQuoted(),
                 self::TEST_STAGING_TABLE_QUOTED,
             ),
         );
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s.%s("pk1","pk2","col1","col2") VALUES (1,1,\'1\',\'1\')',
-                self::TEST_SCHEMA_QUOTED,
+                self::getTestSchemaQuoted(),
                 self::TEST_STAGING_TABLE_QUOTED,
             ),
         );
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s.%s("pk1","pk2","col1","col2") VALUES (2,2,\'2\',\'2\')',
-                self::TEST_SCHEMA_QUOTED,
+                self::getTestSchemaQuoted(),
                 self::TEST_STAGING_TABLE_QUOTED,
             ),
         );
@@ -130,7 +156,7 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
             $this->connection->executeStatement(
                 sprintf(
                     'INSERT INTO %s.%s("pk1","pk2","col1","col2") VALUES (2,2,\'\',NULL)',
-                    self::TEST_SCHEMA_QUOTED,
+                    self::getTestSchemaQuoted(),
                     self::TEST_STAGING_TABLE_QUOTED,
                 ),
             );
@@ -149,7 +175,7 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
         $this->createTestSchema();
 
         $tableDefinition = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             false,
             new ColumnCollection([
@@ -180,7 +206,7 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
             ),
         );
         $stagingTableDefinition = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             false,
             new ColumnCollection([
@@ -216,7 +242,7 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
             $this->getSimpleImportOptions(),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'DELETE FROM "import_export_test_schema"."__temp_stagingTable" "src" USING "import_export_test_schema"."import_export_test_test" AS "dest" WHERE "dest"."pk1" = COALESCE("src"."pk1", \'\') AND "dest"."pk2" = COALESCE("src"."pk2", \'\') ',
             $sql,
@@ -249,7 +275,7 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
         $this->createTestSchema();
 
         $tableDefinition = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             false,
             new ColumnCollection([
@@ -280,7 +306,7 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
             ),
         );
         $stagingTableDefinition = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             false,
             new ColumnCollection([
@@ -324,7 +350,7 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'DELETE FROM "import_export_test_schema"."__temp_stagingTable" "src" USING "import_export_test_schema"."import_export_test_test" AS "dest" WHERE "dest"."pk1" = "src"."pk1" AND "dest"."pk2" = "src"."pk2" ',
             $sql,
@@ -370,11 +396,11 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
     public function testGetDropTableIfExistsCommand(): void
     {
         $this->createTestSchema();
-        self::assertTableNotExists(self::TEST_SCHEMA, self::TEST_TABLE);
+        self::assertTableNotExists(self::getTestSchema(), self::TEST_TABLE);
 
         // try to drop not existing table
-        $sql = $this->getBuilder()->getDropTableIfExistsCommand(self::TEST_SCHEMA, self::TEST_TABLE);
-        self::assertEquals(
+        $sql = $this->getBuilder()->getDropTableIfExistsCommand(self::getTestSchema(), self::TEST_TABLE);
+        self::assertSqlEquals(
         // phpcs:ignore
             'DROP TABLE IF EXISTS "import_export_test_schema"."import_export_test_test"',
             $sql,
@@ -385,20 +411,20 @@ class SqlBuilderTest extends SnowflakeBaseTestCase
         $this->createTestTable();
 
         // try to drop not existing table
-        $sql = $this->getBuilder()->getDropTableIfExistsCommand(self::TEST_SCHEMA, self::TEST_TABLE);
-        self::assertEquals(
+        $sql = $this->getBuilder()->getDropTableIfExistsCommand(self::getTestSchema(), self::TEST_TABLE);
+        self::assertSqlEquals(
         // phpcs:ignore
             'DROP TABLE IF EXISTS "import_export_test_schema"."import_export_test_test"',
             $sql,
         );
         $this->connection->executeStatement($sql);
 
-        self::assertTableNotExists(self::TEST_SCHEMA, self::TEST_TABLE);
+        self::assertTableNotExists(self::getTestSchema(), self::TEST_TABLE);
     }
 
     protected function createTestTable(): void
     {
-        $table = self::TEST_TABLE_IN_SCHEMA;
+        $table = self::getTestTableInSchema();
         $this->connection->executeStatement(<<<EOT
 CREATE TABLE $table (
     id int NOT NULL
@@ -414,7 +440,7 @@ EOT,);
 
         // create fake stage and say that there is less columns
         $fakeStage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -434,23 +460,23 @@ EOT,);
             '2020-01-01 00:00:00',
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2") (SELECT COALESCE("col1", \'\') AS "col1",COALESCE("col2", \'\') AS "col2" FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
             $sql,
         );
 
         $out = $this->connection->executeStatement($sql);
-        self::assertEquals(4, $out);
+        self::assertSqlEquals(4, $out);
 
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => null,
@@ -481,7 +507,7 @@ EOT,);
     {
         $this->createTestSchema();
         $destination = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             false,
             new ColumnCollection([
@@ -529,7 +555,7 @@ EOT,);
             ['pk1'],
         );
         $stage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -564,7 +590,7 @@ SELECT \'1\',
        ARRAY_CONSTRUCT(1, 2, 3, NULL),
        ARRAY_CONSTRUCT(1,2,3)::VECTOR(INT,3)
 ;',
-                self::TEST_SCHEMA,
+                self::getTestSchema(),
                 self::TEST_TABLE,
             ),
         );
@@ -583,7 +609,7 @@ SELECT \'1\',
        TO_VARCHAR(ARRAY_CONSTRUCT(1, 2, 3, NULL)),
        TO_VARCHAR(TO_ARRAY([1,2,3]::VECTOR(INT,3)))
 ;',
-                self::TEST_SCHEMA,
+                self::getTestSchema(),
                 self::TEST_STAGING_TABLE,
             ),
         );
@@ -604,14 +630,14 @@ SELECT \'1\',
             '2020-01-01 00:00:00',
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'INSERT INTO "import_export_test_schema"."import_export_test_test" ("pk1", "VARIANT", "BINARY", "VARBINARY", "OBJECT", "ARRAY", "VECTOR") (SELECT "pk1",CAST("VARIANT" AS VARIANT) AS "VARIANT","BINARY","VARBINARY",CAST(TO_VARIANT("OBJECT") AS OBJECT) AS "OBJECT",CAST(PARSE_JSON("ARRAY") AS ARRAY) AS "ARRAY",CAST(PARSE_JSON("VECTOR") AS ARRAY)::VECTOR (INT,3) AS "VECTOR" FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
             $sql,
         );
 
         $out = $this->connection->executeStatement($sql);
-        self::assertEquals(1, $out);
+        self::assertSqlEquals(1, $out);
 
         // now Snowflake return `vector = null` when you use `select * from …`, we need to cast vector explicitly here
         // this hack can be removed, when Snowflake start to select vectors correctly
@@ -620,10 +646,10 @@ SELECT \'1\',
         $result = $this->connection->fetchAllAssociative(sprintf(
         // phpcs:ignore
             'SELECT "pk1", "VARIANT", "BINARY", "VARBINARY", "OBJECT", "ARRAY", cast("VECTOR" AS ARRAY) AS "VECTOR" FROM %s',
-            self::TEST_TABLE_IN_SCHEMA,
+            self::getTestTableInSchema(),
         ),);
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'pk1' => '1',
@@ -693,7 +719,7 @@ EOD,
 
         // create fake stage and say that there is less columns
         $fakeStage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -721,23 +747,23 @@ EOD,
             '2020-01-01 00:00:00',
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2") (SELECT "col1","col2" FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
             $sql,
         );
 
         $out = $this->connection->executeStatement($sql);
-        self::assertEquals(4, $out);
+        self::assertSqlEquals(4, $out);
 
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => null,
@@ -790,7 +816,7 @@ EOD,
         }
 
         $tableDefinition = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             false,
             new ColumnCollection($columns),
@@ -810,7 +836,7 @@ EOD,
         $this->createStagingTableWithData(true);
         // create fake stage and say that there is less columns
         $fakeStage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -831,22 +857,22 @@ EOD,
             $options,
             '2020-01-01 00:00:00',
         );
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2") (SELECT IFF("col1" = \'\', NULL, "col1"),COALESCE("col2", \'\') AS "col2" FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
             $sql,
         );
         $out = $this->connection->executeStatement($sql);
-        self::assertEquals(4, $out);
+        self::assertSqlEquals(4, $out);
 
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => null,
@@ -880,7 +906,7 @@ EOD,
         $this->createStagingTableWithData(true);
         // create fake stage and say that there is less columns
         $fakeStage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -906,18 +932,18 @@ EOD,
             $options,
             '2020-01-01 00:00:00',
         );
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2", "_timestamp") (SELECT IFF("col1" = \'\', NULL, "col1"),COALESCE("col2", \'\') AS "col2",\'2020-01-01 00:00:00\' FROM "import_export_test_schema"."__temp_stagingTable" AS "src")',
             $sql,
         );
         $out = $this->connection->executeStatement($sql);
-        self::assertEquals(4, $out);
+        self::assertSqlEquals(4, $out);
 
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
@@ -934,16 +960,16 @@ EOD,
         $this->createTestSchema();
         $this->createStagingTableWithData();
 
-        $ref = new SnowflakeTableReflection($this->connection, self::TEST_SCHEMA, self::TEST_STAGING_TABLE);
-        self::assertEquals(3, $ref->getRowsCount());
+        $ref = new SnowflakeTableReflection($this->connection, self::getTestSchema(), self::TEST_STAGING_TABLE);
+        self::assertSqlEquals(3, $ref->getRowsCount());
 
-        $sql = $this->getBuilder()->getTruncateTable(self::TEST_SCHEMA, self::TEST_STAGING_TABLE);
-        self::assertEquals(
+        $sql = $this->getBuilder()->getTruncateTable(self::getTestSchema(), self::TEST_STAGING_TABLE);
+        self::assertSqlEquals(
             'TRUNCATE TABLE "import_export_test_schema"."__temp_stagingTable"',
             $sql,
         );
         $this->connection->executeStatement($sql);
-        self::assertEquals(0, $ref->getRowsCount());
+        self::assertSqlEquals(0, $ref->getRowsCount());
     }
 
     public function testGetUpdateWithPkCommand(): void
@@ -953,7 +979,7 @@ EOD,
         $this->createStagingTableWithData(true);
         // create fake destination and say that there is pk on col1
         $fakeDestination = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -964,7 +990,7 @@ EOD,
         );
         // create fake stage and say that there is fewer columns
         $fakeStage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -977,18 +1003,18 @@ EOD,
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s("id","col1","col2") VALUES (1,\'2\',\'1\')',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -1006,7 +1032,7 @@ EOD,
             $this->getDummyImportOptions(),
             '2020-01-01 00:00:00',
         );
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'UPDATE "import_export_test_schema"."import_export_test_test" AS "dest" SET "col1" = COALESCE("src"."col1", \'\'), "col2" = COALESCE("src"."col2", \'\') FROM "import_export_test_schema"."__temp_stagingTable" AS "src" WHERE "dest"."col1" = COALESCE("src"."col1", \'\')  AND (COALESCE(TO_VARCHAR("dest"."col1"), \'\') != COALESCE("src"."col1", \'\') OR COALESCE(TO_VARCHAR("dest"."col2"), \'\') != COALESCE("src"."col2", \'\'))',
             $sql,
@@ -1016,11 +1042,11 @@ EOD,
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -1039,7 +1065,7 @@ EOD,
         $this->createStagingTableWithData(true);
         // create fake destination and say that there is pk on col1
         $fakeDestination = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -1050,7 +1076,7 @@ EOD,
         );
         // create fake stage and say that there is less columns
         $fakeStage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -1063,18 +1089,18 @@ EOD,
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s("id","col1","col2") VALUES (1,\'2\',\'1\')',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -1100,7 +1126,7 @@ EOD,
             ),
             '2020-01-01 00:00:00',
         );
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'UPDATE "import_export_test_schema"."import_export_test_test" AS "dest" SET "col1" = "src"."col1", "col2" = "src"."col2" FROM "import_export_test_schema"."__temp_stagingTable" AS "src" WHERE "dest"."col1" = "src"."col1"  AND ("dest"."col1" IS DISTINCT FROM "src"."col1" OR "dest"."col2" IS DISTINCT FROM "src"."col2")',
             $sql,
@@ -1110,11 +1136,11 @@ EOD,
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -1172,14 +1198,14 @@ EOD,
             ),
             ],);
         $destination = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             false,
             $columnCollection,
             ['pk1'],
         );
         $stage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             $columnCollection,
@@ -1206,7 +1232,7 @@ SELECT \'1\',
        ARRAY_CONSTRUCT(1, 2, 3, NULL),
        [1,2,3]::VECTOR(INT,3)
 ;',
-                self::TEST_SCHEMA,
+                self::getTestSchema(),
                 self::TEST_TABLE,
             ),
         );
@@ -1225,7 +1251,7 @@ SELECT \'1\',
        ARRAY_CONSTRUCT(1, 2, 3, NULL),
        [1,2,3]::VECTOR(INT,3)
 ;',
-                self::TEST_SCHEMA,
+                self::getTestSchema(),
                 self::TEST_STAGING_TABLE,
             ),
         );
@@ -1245,7 +1271,7 @@ SELECT \'1\',
             ),
             '2020-01-01 00:00:00',
         );
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'UPDATE "import_export_test_schema"."import_export_test_test" AS "dest" SET "pk1" = "src"."pk1", "VARIANT" = "src"."VARIANT", "BINARY" = "src"."BINARY", "VARBINARY" = "src"."VARBINARY", "OBJECT" = "src"."OBJECT", "ARRAY" = "src"."ARRAY", "VECTOR" = "src"."VECTOR" FROM "import_export_test_schema"."__temp_stagingTable" AS "src" WHERE "dest"."pk1" = "src"."pk1"  AND ("dest"."pk1" IS DISTINCT FROM "src"."pk1" OR "dest"."VARIANT" IS DISTINCT FROM "src"."VARIANT" OR "dest"."BINARY" IS DISTINCT FROM "src"."BINARY" OR "dest"."VARBINARY" IS DISTINCT FROM "src"."VARBINARY" OR "dest"."OBJECT" IS DISTINCT FROM "src"."OBJECT" OR "dest"."ARRAY" IS DISTINCT FROM "src"."ARRAY" OR "dest"."VECTOR" IS DISTINCT FROM "src"."VECTOR")',
             $sql,
@@ -1259,10 +1285,10 @@ SELECT \'1\',
         $result = $this->connection->fetchAllAssociative(sprintf(
         // phpcs:ignore
             'SELECT "pk1", "VARIANT", "BINARY", "VARBINARY", "OBJECT", "ARRAY", cast("VECTOR" AS ARRAY) AS "VECTOR" FROM %s',
-            self::TEST_TABLE_IN_SCHEMA,
+            self::getTestTableInSchema(),
         ),);
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'pk1' => '1',
@@ -1304,7 +1330,7 @@ EOD,
         $this->createStagingTableWithData(true);
         // create fake destination and say that there is pk on col1
         $fakeDestination = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -1315,7 +1341,7 @@ EOD,
         );
         // create fake stage and say that there is less columns
         $fakeStage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -1328,24 +1354,24 @@ EOD,
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s("id","col1","col2") VALUES (1,\'\',\'1\')',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s("id","col1","col2") VALUES (1,\'2\',\'\')',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -1370,7 +1396,7 @@ EOD,
             $options,
             '2020-01-01 00:00:00',
         );
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'UPDATE "import_export_test_schema"."import_export_test_test" AS "dest" SET "col1" = IFF("src"."col1" = \'\', NULL, "src"."col1"), "col2" = COALESCE("src"."col2", \'\') FROM "import_export_test_schema"."__temp_stagingTable" AS "src" WHERE "dest"."col1" = COALESCE("src"."col1", \'\')  AND (COALESCE(TO_VARCHAR("dest"."col1"), \'\') != COALESCE("src"."col1", \'\') OR COALESCE(TO_VARCHAR("dest"."col2"), \'\') != COALESCE("src"."col2", \'\'))',
             $sql,
@@ -1380,11 +1406,11 @@ EOD,
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -1411,7 +1437,7 @@ EOD,
 
         // create fake destination and say that there is pk on col1
         $fakeDestination = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -1422,7 +1448,7 @@ EOD,
         );
         // create fake stage and say that there is less columns
         $fakeStage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -1435,14 +1461,14 @@ EOD,
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s("id","col1","col2","_timestamp") VALUES (1,\'\',\'1\',\'%s\')',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
                 $timestampInit->format(DateTimeHelper::FORMAT),
             ),
         );
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s("id","col1","col2","_timestamp") VALUES (1,\'2\',\'\',\'%s\')',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
                 $timestampInit->format(DateTimeHelper::FORMAT),
             ),
         );
@@ -1450,11 +1476,11 @@ EOD,
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -1481,7 +1507,7 @@ EOD,
             $timestampSet->format(DateTimeHelper::FORMAT),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'UPDATE "import_export_test_schema"."import_export_test_test" AS "dest" SET "col1" = IFF("src"."col1" = \'\', NULL, "src"."col1"), "col2" = COALESCE("src"."col2", \'\'), "_timestamp" = \'2020-01-01 01:01:01\' FROM "import_export_test_schema"."__temp_stagingTable" AS "src" WHERE "dest"."col1" = COALESCE("src"."col1", \'\')  AND (COALESCE(TO_VARCHAR("dest"."col1"), \'\') != COALESCE("src"."col1", \'\') OR COALESCE(TO_VARCHAR("dest"."col2"), \'\') != COALESCE("src"."col2", \'\'))',
             $sql,
@@ -1491,7 +1517,7 @@ EOD,
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
@@ -1518,7 +1544,7 @@ EOD,
 
         // create fake destination and say that there is pk on col1
         $fakeDestination = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -1529,7 +1555,7 @@ EOD,
         );
         // create fake stage and say that there is less columns
         $fakeStage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -1542,14 +1568,14 @@ EOD,
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s("id","col1","col2","_timestamp") VALUES (1,\'1\',\'1\',\'%s\')',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
                 $timestampInit->format(DateTimeHelper::FORMAT),
             ),
         );
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s("id","col1","col2","_timestamp") VALUES (2,\'2\',\'3\',\'%s\')',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
                 $timestampInit->format(DateTimeHelper::FORMAT),
             ),
         );
@@ -1557,11 +1583,11 @@ EOD,
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -1596,7 +1622,7 @@ EOD,
             $timestampSet->format(DateTimeHelper::FORMAT),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
         // phpcs:ignore
             'UPDATE "import_export_test_schema"."import_export_test_test" AS "dest" SET "col1" = "src"."col1", "col2" = "src"."col2", "_timestamp" = \'2020-01-01 01:01:01\' FROM "import_export_test_schema"."__temp_stagingTable" AS "src" WHERE "dest"."col1" = "src"."col1"  AND ("dest"."col1" IS DISTINCT FROM "src"."col1" OR "dest"."col2" IS DISTINCT FROM "src"."col2")',
             $sql,
@@ -1606,11 +1632,11 @@ EOD,
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             // no changes on all columns - no update of timestamp
             [
@@ -1653,14 +1679,14 @@ EOD,
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s.%s("pk1","pk2","col1","col2") VALUES (3,3,\'\',NULL)',
-                self::TEST_SCHEMA_QUOTED,
+                self::getTestSchemaQuoted(),
                 self::TEST_STAGING_TABLE_QUOTED,
             ),
         );
 
         // create fake destination and say that there is pk on col1
         $fakeDestination = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             true,
             new ColumnCollection([
@@ -1671,7 +1697,7 @@ EOD,
         );
         // create fake stage and say that there is less columns
         $fakeStage = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
@@ -1684,14 +1710,14 @@ EOD,
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s("id","col1","col2","_timestamp") VALUES (1,\'1\',\'1\',\'%s\')',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
                 $timestampInit->format(DateTimeHelper::FORMAT),
             ),
         );
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s("id","col1","col2","_timestamp") VALUES (3,\'3\',NULL,\'%s\')',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
                 $timestampInit->format(DateTimeHelper::FORMAT),
             ),
         );
@@ -1699,11 +1725,11 @@ EOD,
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -1739,7 +1765,7 @@ EOD,
             $timestampSet->format(DateTimeHelper::FORMAT),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             $expectedSQL,
             $sql,
         );
@@ -1748,7 +1774,7 @@ EOD,
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT * FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
@@ -1758,7 +1784,7 @@ EOD,
         }
 
         // timestamp was updated to $timestampSet but there is same row as in stage table so no other value is updated
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -1783,7 +1809,7 @@ EOD,
         $timestampSet = new DateTime('2020-01-01 01:01:01');
         $this->createTestSchema();
         $tableDefinition = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_TABLE,
             false,
             new ColumnCollection([
@@ -1832,7 +1858,7 @@ EOD,
             ['id'],
         );
         $stageDefinition = new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             false,
             new ColumnCollection([
@@ -1926,7 +1952,7 @@ EOD,
             ),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -2060,7 +2086,7 @@ EOD,
             $timestampSet->format(DateTimeHelper::FORMAT),
         );
 
-        self::assertEquals(
+        self::assertSqlEquals(
             // phpcs:ignore
             'UPDATE "import_export_test_schema"."import_export_test_test" AS "dest" SET "id" = "src"."id", "array" = "src"."array", "vector" = "src"."vector", "geometry" = "src"."geometry", "geography" = "src"."geography", "_timestamp" = \'2020-01-01 01:01:01\' FROM "import_export_test_schema"."__temp_stagingTable" AS "src" WHERE "dest"."id" = "src"."id"  AND ("dest"."id" IS DISTINCT FROM "src"."id" OR "dest"."array" IS DISTINCT FROM "src"."array" OR "dest"."vector" IS DISTINCT FROM "src"."vector" OR ST_ASEWKT("dest"."geometry") IS DISTINCT FROM ST_ASEWKT("src"."geometry") OR ST_ASEWKT("dest"."geography") IS DISTINCT FROM ST_ASEWKT("src"."geography"))',
             $sql,
@@ -2074,12 +2100,12 @@ EOD,
         $result = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT "id","array",CAST("vector" AS ARRAY) AS "vector" ,"geometry","geography","_timestamp" FROM %s',
-                self::TEST_TABLE_IN_SCHEMA,
+                self::getTestTableInSchema(),
             ),
         );
 
         // timestamp was updated to $timestampSet but there is same row as in stage table so no other value is updated
-        self::assertEquals(
+        self::assertSqlEquals(
             [
             [
                 'id' => '1',
@@ -2199,7 +2225,7 @@ EOD,
     private function getStagingTableDefinition(): SnowflakeTableDefinition
     {
         return new SnowflakeTableDefinition(
-            self::TEST_SCHEMA,
+            self::getTestSchema(),
             self::TEST_STAGING_TABLE,
             true,
             new ColumnCollection([
