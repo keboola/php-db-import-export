@@ -314,6 +314,163 @@ class FullImportTest extends BigqueryBaseTestCase
     }
 
     /**
+     * Same scenario as testLoadToTableWithDedupWithSinglePK(), but with the bigquery-optimized-import
+     * feature enabled (aggregation-based dedup + CLUSTER BY). Must produce identical final row count.
+     */
+    public function testLoadToTableWithDedupWithSinglePKOptimized(): void
+    {
+        $this->initTable(self::TABLE_SINGLE_PK, $this->getDestinationDbName());
+
+        $options = new BigqueryImportOptions(
+            convertEmptyValuesToNull: [],
+            isIncremental: false,
+            useTimestamp: false,
+            numberOfIgnoredLines: BigqueryImportOptions::SKIP_FIRST_LINE,
+            usingTypes: BigqueryImportOptions::USING_TYPES_STRING,
+            features: [BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT],
+        );
+        $source = $this->getSourceInstance(
+            'multi-pk.csv',
+            [
+                'VisitID',
+                'Value',
+                'MenuItem',
+                'Something',
+                'Other',
+            ],
+            false,
+            false,
+            ['VisitID'],
+        );
+
+        $importer = new ToStageImporter($this->bqClient);
+        $destinationRef = new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getDestinationDbName(),
+            self::TABLE_SINGLE_PK,
+        );
+        /** @var BigqueryTableDefinition $destination */
+        $destination = $destinationRef->getTableDefinition();
+        $destination = $this->cloneDefinitionWithDedupCol($destination, ['VisitID']);
+        $stagingTable = StageTableDefinitionFactory::createStagingTableDefinition(
+            $destination,
+            [
+            'VisitID',
+            'Value',
+            'MenuItem',
+            'Something',
+            'Other',
+            ],
+        );
+        $qb = new BigqueryTableQueryBuilder();
+        $this->bqClient->runQuery(
+            $this->bqClient->query(
+                $qb->getCreateTableCommandFromDefinition($stagingTable),
+            ),
+        );
+        $importState = $importer->importToStagingTable(
+            $source,
+            $stagingTable,
+            $options,
+        );
+        $toFinalTableImporter = new FullImporter($this->bqClient);
+        $toFinalTableImporter->importToTable(
+            $stagingTable,
+            $destination,
+            $options,
+            $importState,
+        );
+
+        $destinationRef->refresh();
+        self::assertEquals(4, $destinationRef->getRowsCount());
+    }
+
+    /**
+     * Same scenario as testLoadToTableWithDedupWithMultiPK(), but with the bigquery-optimized-import
+     * feature enabled (aggregation-based dedup + CLUSTER BY on a multi-column PK). Must produce
+     * identical final row count.
+     */
+    public function testLoadToTableWithDedupWithMultiPKOptimized(): void
+    {
+        $this->initTable(self::TABLE_MULTI_PK, $this->getDestinationDbName());
+
+        $options = new BigqueryImportOptions(
+            convertEmptyValuesToNull: [],
+            isIncremental: false,
+            useTimestamp: false,
+            numberOfIgnoredLines: BigqueryImportOptions::SKIP_FIRST_LINE,
+            usingTypes: BigqueryImportOptions::USING_TYPES_STRING,
+            features: [BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT],
+        );
+        $source = $this->getSourceInstance(
+            'multi-pk.csv',
+            [
+                'VisitID',
+                'Value',
+                'MenuItem',
+                'Something',
+                'Other',
+            ],
+            false,
+            false,
+            ['VisitID', 'Something'],
+        );
+
+        $importer = new ToStageImporter($this->bqClient);
+        $destinationRef = new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getDestinationDbName(),
+            self::TABLE_MULTI_PK,
+        );
+        /** @var BigqueryTableDefinition $destination */
+        $destination = $destinationRef->getTableDefinition();
+        $destination = $this->cloneDefinitionWithDedupCol($destination, ['VisitID', 'Something']);
+        $stagingTable = StageTableDefinitionFactory::createStagingTableDefinition(
+            $destination,
+            [
+            'VisitID',
+            'Value',
+            'MenuItem',
+            'Something',
+            'Other',
+            ],
+        );
+        $qb = new BigqueryTableQueryBuilder();
+        $this->bqClient->runQuery(
+            $this->bqClient->query(
+                $qb->getCreateTableCommandFromDefinition($stagingTable),
+            ),
+        );
+        $importState = $importer->importToStagingTable(
+            $source,
+            $stagingTable,
+            $options,
+        );
+
+        // now 6 lines. Add one with same VisitId and Something as an existing line has
+        // -> expecting that this line will be skipped when DEDUP
+        $this->bqClient->runQuery(
+            $this->bqClient->query(
+                sprintf(
+                    "INSERT INTO %s.%s VALUES ('134', 'xx', 'yy', 'abc', 'def');",
+                    BigqueryQuote::quoteSingleIdentifier($stagingTable->getSchemaName()),
+                    BigqueryQuote::quoteSingleIdentifier($stagingTable->getTableName()),
+                ),
+            ),
+        );
+        $toFinalTableImporter = new FullImporter($this->bqClient);
+        $toFinalTableImporter->importToTable(
+            $stagingTable,
+            $destination,
+            $options,
+            $importState,
+        );
+
+        $destinationRef->refresh();
+        self::assertEquals(6, $destinationRef->getRowsCount());
+    }
+
+    /**
      * @return Generator<string, array<mixed>>
      */
     public static function fullImportData(): Generator

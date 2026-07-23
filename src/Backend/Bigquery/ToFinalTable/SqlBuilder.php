@@ -18,6 +18,29 @@ class SqlBuilder
 {
     private const SRC_ALIAS = 'src';
 
+    // BigQuery CLUSTER BY only supports these column types; GEOGRAPHY/TIME/JSON/etc are intentionally excluded
+    private const CLUSTERABLE_TYPES = [
+        Bigquery::TYPE_STRING,
+        Bigquery::TYPE_INT64,
+        Bigquery::TYPE_INT,
+        Bigquery::TYPE_SMALLINT,
+        Bigquery::TYPE_INTEGER,
+        Bigquery::TYPE_BIGINT,
+        Bigquery::TYPE_TINYINT,
+        Bigquery::TYPE_BYTEINT,
+        Bigquery::TYPE_NUMERIC,
+        Bigquery::TYPE_DECIMAL,
+        Bigquery::TYPE_BIGNUMERIC,
+        Bigquery::TYPE_BIGDECIMAL,
+        Bigquery::TYPE_DATE,
+        Bigquery::TYPE_DATETIME,
+        Bigquery::TYPE_TIMESTAMP,
+        Bigquery::TYPE_BOOL,
+        Bigquery::TYPE_BOOLEAN,
+    ];
+
+    private const MAX_CLUSTER_BY_COLUMNS = 4;
+
     private function assertColumnExist(
         BigqueryTableDefinition $tableDefinition,
         BigqueryColumn $columnDefinition,
@@ -165,6 +188,36 @@ SQL,
             BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getTableName()),
         );
 
+        [$columnsToInsert, $columnsSetSql] = $this->getInsertColumnsAndValues(
+            $sourceTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+            $timestamp,
+        );
+
+        return sprintf(
+            'INSERT INTO %s (%s) SELECT %s FROM %s.%s AS %s',
+            $destinationTable,
+            $this->getColumnsString($columnsToInsert),
+            implode(',', $columnsSetSql),
+            BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
+            BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
+            BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+        );
+    }
+
+    /**
+     * Column list + value expressions for inserting sourceTableDefinition rows into destinationTableDefinition,
+     * shared by getInsertAllIntoTargetTableCommand() and the MERGE...WHEN NOT MATCHED branch in getMergeCommand().
+     *
+     * @return array{0: string[], 1: string[]}
+     */
+    private function getInsertColumnsAndValues(
+        BigqueryTableDefinition $sourceTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        BigqueryImportOptions $importOptions,
+        string $timestamp,
+    ): array {
         $columnsToInsert = $sourceTableDefinition->getColumnsNames();
         $useTimestamp = !in_array(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME, $columnsToInsert, true)
             && $importOptions->useTimestamp();
@@ -203,15 +256,7 @@ SQL,
             );
         }
 
-        return sprintf(
-            'INSERT INTO %s (%s) SELECT %s FROM %s.%s AS %s',
-            $destinationTable,
-            $this->getColumnsString($columnsToInsert),
-            implode(',', $columnsSetSql),
-            BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
-            BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
-            BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),
-        );
+        return [$columnsToInsert, $columnsSetSql];
     }
 
     public function getTruncateTable(string $schema, string $tableName): string
@@ -281,7 +326,16 @@ SQL,
         BigqueryTableDefinition $stagingTableDefinition,
         string $dedupTableName,
         array $primaryKeys,
+        bool $useOptimizedImport = false,
     ): string {
+        if ($useOptimizedImport) {
+            return $this->getCreateDedupTableOptimized(
+                $stagingTableDefinition,
+                $dedupTableName,
+                $primaryKeys,
+            );
+        }
+
         return sprintf(
             <<< SQL
 CREATE OR REPLACE TABLE %s.%s AS
@@ -297,12 +351,184 @@ SQL,
         );
     }
 
+    /**
+     * Aggregation-based dedup: GROUP BY + ANY_VALUE(row) avoids the redundant ORDER BY sort of
+     * ROW_NUMBER() OVER (PARTITION BY pk ORDER BY pk), and CLUSTER BY prunes shuffle on the PK join
+     * done later in getMergeCommand()/getUpdateWithPkCommand(). Row selection among PK duplicates is
+     * arbitrary in both the old and new implementation, so this is semantically equivalent.
+     *
+     * @param string[] $primaryKeys
+     */
+    private function getCreateDedupTableOptimized(
+        BigqueryTableDefinition $stagingTableDefinition,
+        string $dedupTableName,
+        array $primaryKeys,
+    ): string {
+        $clusterByClause = $this->getClusterByClause($stagingTableDefinition, $primaryKeys);
+
+        $stage = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
+            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
+        );
+
+        $groupBySql = $this->getColumnsString($primaryKeys, ', ', self::SRC_ALIAS);
+
+        return sprintf(
+            <<< SQL
+CREATE OR REPLACE TABLE %s.%s
+%sAS
+SELECT AS VALUE ANY_VALUE(%s) FROM %s AS %s GROUP BY %s
+SQL,
+            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
+            BigqueryQuote::quoteSingleIdentifier($dedupTableName),
+            $clusterByClause,
+            BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            $stage,
+            BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            $groupBySql,
+        );
+    }
+
+    /**
+     * @param string[] $primaryKeys
+     */
+    private function getClusterByClause(
+        BigqueryTableDefinition $stagingTableDefinition,
+        array $primaryKeys,
+    ): string {
+        $clusterableColumns = [];
+        foreach ($primaryKeys as $primaryKey) {
+            $type = null;
+            /** @var BigqueryColumn $columnDefinition */
+            foreach ($stagingTableDefinition->getColumnsDefinitions() as $columnDefinition) {
+                if ($columnDefinition->getColumnName() === $primaryKey) {
+                    $type = $columnDefinition->getColumnDefinition()->getType();
+                    break;
+                }
+            }
+            if ($type === null || !in_array(strtoupper($type), self::CLUSTERABLE_TYPES, true)) {
+                // any non-clusterable PK column type disqualifies clustering entirely
+                return '';
+            }
+            $clusterableColumns[] = $primaryKey;
+        }
+
+        $clusterableColumns = array_slice($clusterableColumns, 0, self::MAX_CLUSTER_BY_COLUMNS);
+
+        return sprintf(
+            'CLUSTER BY %s ',
+            $this->getColumnsString($clusterableColumns),
+        );
+    }
+
     public function getUpdateWithPkCommand(
         BigqueryTableDefinition $stagingTableDefinition,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $importOptions,
         string $timestampValue,
     ): string {
+        $columnsSet = $this->getColumnsSetForUpdate(
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+            $timestampValue,
+        );
+        $columnsComparisonSql = $this->getColumnsComparisonSql(
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+        );
+
+        $dest = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getSchemaName()),
+            BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getTableName()),
+        );
+
+        return sprintf(
+            'UPDATE %s AS `dest` SET %s FROM %s.%s AS `src` WHERE %s AND (%s)',
+            $dest,
+            implode(', ', $columnsSet),
+            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
+            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
+            $this->getPrimaryKeyWhereConditions(
+                $destinationTableDefinition->getPrimaryKeysNames(),
+                $importOptions,
+                $destinationTableDefinition,
+            ),
+            implode(' OR ', $columnsComparisonSql),
+        );
+    }
+
+    /**
+     * MERGE replacing UPDATE+DELETE+INSERT for the PK dedup path: a single atomic statement,
+     * so no explicit BEGIN/COMMIT transaction is required around it (see IncrementalImporter).
+     * Reuses the exact same column-set/comparison/insert-value expressions as the legacy path
+     * to guarantee semantic equivalence.
+     */
+    public function getMergeCommand(
+        BigqueryTableDefinition $stagingTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        BigqueryImportOptions $importOptions,
+        string $timestampValue,
+    ): string {
+        $columnsSet = $this->getColumnsSetForUpdate(
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+            $timestampValue,
+        );
+        $columnsComparisonSql = $this->getColumnsComparisonSql(
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+        );
+        [$insertColumns, $insertValues] = $this->getInsertColumnsAndValues(
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+            $timestampValue,
+        );
+
+        $dest = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getSchemaName()),
+            BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getTableName()),
+        );
+        $src = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
+            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
+        );
+
+        return sprintf(
+            'MERGE %s AS `dest` USING %s AS `src` ON %s'
+            . ' WHEN MATCHED AND (%s) THEN UPDATE SET %s'
+            . ' WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)',
+            $dest,
+            $src,
+            $this->getPrimaryKeyWhereConditions(
+                $destinationTableDefinition->getPrimaryKeysNames(),
+                $importOptions,
+                $destinationTableDefinition,
+            ),
+            implode(' OR ', $columnsComparisonSql),
+            implode(', ', $columnsSet),
+            $this->getColumnsString($insertColumns),
+            implode(',', $insertValues),
+        );
+    }
+
+    /**
+     * @return string[]
+     */
+    private function getColumnsSetForUpdate(
+        BigqueryTableDefinition $stagingTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        BigqueryImportOptions $importOptions,
+        string $timestampValue,
+    ): array {
         $columnsSet = [];
 
         foreach ($stagingTableDefinition->getColumnsNames() as $columnName) {
@@ -371,8 +597,19 @@ SQL,
             );
         }
 
+        return $columnsSet;
+    }
+
+    /**
+     * @return string[]
+     */
+    private function getColumnsComparisonSql(
+        BigqueryTableDefinition $stagingTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        BigqueryImportOptions $importOptions,
+    ): array {
         if ($importOptions->usingUserDefinedTypes()) {
-            $columnsComparisonSql = array_map(
+            return array_map(
                 static function ($columnName) {
                     return sprintf(
                         '`dest`.%s IS DISTINCT FROM `src`.%s',
@@ -382,62 +619,44 @@ SQL,
                 },
                 $stagingTableDefinition->getColumnsNames(),
             );
-        } else {
-            $columnsComparisonSql = [];
-            foreach ($stagingTableDefinition->getColumnsNames() as $key => $columnName) {
-                if ($importOptions->timestampMode === TimestampMode::FromSource
-                    && $columnName === ToStageImporterInterface::TIMESTAMP_COLUMN_NAME
-                ) {
-                    // do not compare timestamp column if it is taken from source
-                    continue;
-                }
-                // Resolve destination column type for comparison
-                $destColType = null;
-                /** @var BigqueryColumn $col */
-                foreach ($destinationTableDefinition->getColumnsDefinitions() as $col) {
-                    if ($col->getColumnName() === $columnName) {
-                        $destColType = $col->getColumnDefinition()->getType();
-                        break;
-                    }
-                }
+        }
 
-                if ($destColType !== null && strtoupper($destColType) !== 'STRING') {
-                    // Cast dest to STRING so comparison works when staging columns are STRING
-                    // but destination columns are typed (e.g. INT64 from cross-backend CSV loads)
-                    $columnsComparisonSql[$key] = sprintf(
-                        'CAST(`dest`.%s AS STRING) != COALESCE(`src`.%s, \'\')',
-                        BigqueryQuote::quoteSingleIdentifier($columnName),
-                        BigqueryQuote::quoteSingleIdentifier($columnName),
-                    );
-                } else {
-                    $columnsComparisonSql[$key] = sprintf(
-                        '`dest`.%s != COALESCE(`src`.%s, \'\')',
-                        BigqueryQuote::quoteSingleIdentifier($columnName),
-                        BigqueryQuote::quoteSingleIdentifier($columnName),
-                    );
+        $columnsComparisonSql = [];
+        foreach ($stagingTableDefinition->getColumnsNames() as $key => $columnName) {
+            if ($importOptions->timestampMode === TimestampMode::FromSource
+                && $columnName === ToStageImporterInterface::TIMESTAMP_COLUMN_NAME
+            ) {
+                // do not compare timestamp column if it is taken from source
+                continue;
+            }
+            // Resolve destination column type for comparison
+            $destColType = null;
+            /** @var BigqueryColumn $col */
+            foreach ($destinationTableDefinition->getColumnsDefinitions() as $col) {
+                if ($col->getColumnName() === $columnName) {
+                    $destColType = $col->getColumnDefinition()->getType();
+                    break;
                 }
+            }
+
+            if ($destColType !== null && strtoupper($destColType) !== 'STRING') {
+                // Cast dest to STRING so comparison works when staging columns are STRING
+                // but destination columns are typed (e.g. INT64 from cross-backend CSV loads)
+                $columnsComparisonSql[$key] = sprintf(
+                    'CAST(`dest`.%s AS STRING) != COALESCE(`src`.%s, \'\')',
+                    BigqueryQuote::quoteSingleIdentifier($columnName),
+                    BigqueryQuote::quoteSingleIdentifier($columnName),
+                );
+            } else {
+                $columnsComparisonSql[$key] = sprintf(
+                    '`dest`.%s != COALESCE(`src`.%s, \'\')',
+                    BigqueryQuote::quoteSingleIdentifier($columnName),
+                    BigqueryQuote::quoteSingleIdentifier($columnName),
+                );
             }
         }
 
-        $dest = sprintf(
-            '%s.%s',
-            BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getSchemaName()),
-            BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getTableName()),
-        );
-
-        return sprintf(
-            'UPDATE %s AS `dest` SET %s FROM %s.%s AS `src` WHERE %s AND (%s)',
-            $dest,
-            implode(', ', $columnsSet),
-            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
-            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
-            $this->getPrimaryKeyWhereConditions(
-                $destinationTableDefinition->getPrimaryKeysNames(),
-                $importOptions,
-                $destinationTableDefinition,
-            ),
-            implode(' OR ', $columnsComparisonSql),
-        );
+        return $columnsComparisonSql;
     }
 
     /**

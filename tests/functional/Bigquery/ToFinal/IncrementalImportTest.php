@@ -38,6 +38,32 @@ class IncrementalImportTest extends BigqueryBaseTestCase
         );
     }
 
+    protected static function getBigqueryIncrementalImportOptionsOptimized(
+        int $skipLines = ImportOptions::SKIP_FIRST_LINE,
+    ): BigqueryImportOptions {
+        return new BigqueryImportOptions(
+            convertEmptyValuesToNull: [],
+            isIncremental: true,
+            useTimestamp: true,
+            numberOfIgnoredLines: $skipLines,
+            usingTypes: BigqueryImportOptions::USING_TYPES_STRING,
+            features: [BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT],
+        );
+    }
+
+    protected static function getSimpleImportOptionsOptimized(
+        int $skipLines = ImportOptions::SKIP_FIRST_LINE,
+    ): BigqueryImportOptions {
+        return new BigqueryImportOptions(
+            convertEmptyValuesToNull: [],
+            isIncremental: false,
+            useTimestamp: true,
+            numberOfIgnoredLines: $skipLines,
+            usingTypes: BigqueryImportOptions::USING_TYPES_STRING,
+            features: [BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT],
+        );
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -162,11 +188,72 @@ class IncrementalImportTest extends BigqueryBaseTestCase
     }
 
     /**
+     * Same scenarios as incrementalImportData(), but with the bigquery-optimized-import feature
+     * enabled: aggregation-based dedup + CLUSTER BY on the dedup table, and a single MERGE
+     * replacing UPDATE+DELETE+INSERT. Must produce identical final table contents.
+     *
+     * @return Generator<string, array<mixed>>
+     */
+    public static function incrementalImportDataOptimized(): Generator
+    {
+        $accountsStub = static::getParseCsvStub('expectation.tw_accounts.increment.csv');
+        $multiPKStub = static::getParseCsvStub('expectation.multi-pk_not-null.increment.csv');
+
+        yield 'simple optimized' => [
+            static::getSourceInstance(
+                'tw_accounts.csv',
+                $accountsStub->getColumns(),
+                false,
+                false,
+                ['id'],
+            ),
+            static::getSimpleImportOptionsOptimized(),
+            static::getSourceInstance(
+                'tw_accounts.increment.csv',
+                $accountsStub->getColumns(),
+                false,
+                false,
+                ['id'],
+            ),
+            static::getBigqueryIncrementalImportOptionsOptimized(),
+            [static::getDestinationDbName(), 'accounts-3'],
+            $accountsStub->getRows(),
+            3, // 4 rows in CSV but id=18 is duplicated, so 3 unique PKs
+            self::TABLE_ACCOUNTS_3,
+            ['id'],
+        ];
+        yield 'multi pk optimized' => [
+            static::getSourceInstance(
+                'multi-pk_not-null.csv',
+                $multiPKStub->getColumns(),
+                false,
+                false,
+                ['VisitID', 'Value', 'MenuItem'],
+            ),
+            static::getSimpleImportOptionsOptimized(),
+            static::getSourceInstance(
+                'multi-pk_not-null.increment.csv',
+                $multiPKStub->getColumns(),
+                false,
+                false,
+                ['VisitID', 'Value', 'MenuItem'],
+            ),
+            static::getBigqueryIncrementalImportOptionsOptimized(),
+            [static::getDestinationDbName(), self::TABLE_MULTI_PK_WITH_TS],
+            $multiPKStub->getRows(),
+            3,
+            self::TABLE_MULTI_PK_WITH_TS,
+            ['VisitID', 'Value', 'MenuItem'],
+        ];
+    }
+
+    /**
      * @param string[]     $table
      * @param string[]     $dedupCols
      * @param array<mixed> $expected
      */
     #[DataProvider('incrementalImportData')]
+    #[DataProvider('incrementalImportDataOptimized')]
     public function testIncrementalImport(
         Storage\SourceInterface $fullLoadSource,
         BigqueryImportOptions $fullLoadOptions,

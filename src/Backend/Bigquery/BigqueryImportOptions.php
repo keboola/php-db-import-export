@@ -10,6 +10,10 @@ use Keboola\TableBackendUtils\Connection\Bigquery\Session;
 
 class BigqueryImportOptions extends ImportOptions
 {
+    // reduces BigQuery shuffle usage: aggregation-based dedup + CLUSTER BY,
+    // single MERGE instead of UPDATE+DELETE+INSERT
+    public const FEATURE_OPTIMIZED_IMPORT = 'bigquery-optimized-import';
+
     private ?Session $session;
 
     /**
@@ -44,5 +48,10 @@ class BigqueryImportOptions extends ImportOptions
     public function getSession(): ?Session
     {
         return $this->session;
+    }
+
+    public function useOptimizedImport(): bool
+    {
+        return in_array(self::FEATURE_OPTIMIZED_IMPORT, $this->features(), true);
     }
 }
