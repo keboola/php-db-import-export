@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Keboola\Db\ImportExportUnit\Backend\Bigquery;
 
 use Generator;
+use Google\Cloud\Core\Exception\BadRequestException;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryException;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryInputDataException;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -13,6 +14,8 @@ use Throwable;
 
 class BigqueryExceptionTest extends TestCase
 {
+    // phpcs:ignore Generic.Files.LineLength
+    private const RESOURCES_EXCEEDED_BIGQUERY_MESSAGE = 'Resources exceeded during query execution: Your project or organization exceeded the maximum disk and memory limit available for shuffle operations. Consider provisioning more slots, reducing query concurrency, or using more efficient logic in this job.';
 
     /**
      * @param mixed[]            $job
@@ -741,5 +744,76 @@ class BigqueryExceptionTest extends TestCase
                 self::assertInstanceOf(BigqueryException::class, $e);
             },
         ];
+
+        yield 'resources exceeded' => [
+            [
+                'jobReference' => [
+                    'projectId' => 'tf2-56',
+                    'jobId' => 'eb64d133-213d-4e99-9cc0-4e37d0c18de9',
+                    'location' => 'US',
+                ],
+                'status' => [
+                    'errorResult' => [
+                        'reason' => 'resourcesExceeded',
+                        'message' => self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE,
+                    ],
+                    'errors' => [
+                        [
+                            'reason' => 'resourcesExceeded',
+                            'message' => self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE,
+                        ],
+                    ],
+                    'state' => 'DONE',
+                ],
+            ],
+            static function (Throwable $e) {
+                self::assertInstanceOf(BigqueryInputDataException::class, $e);
+                self::assertStringContainsString('shuffle operations', $e->getMessage());
+                self::assertStringContainsString('delete_where', $e->getMessage());
+            },
+        ];
+    }
+
+    public function testCovertExceptionResourcesExceeded(): void
+    {
+        $e = BigqueryException::covertException(new BadRequestException(
+            (string) json_encode([
+                'error' => [
+                    'code' => 400,
+                    'message' => self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE,
+                    'errors' => [
+                        [
+                            'message' => self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE,
+                            'domain' => 'global',
+                            'reason' => 'resourcesExceeded',
+                        ],
+                    ],
+                    'status' => 'INVALID_ARGUMENT',
+                ],
+            ]),
+            400,
+        ));
+
+        self::assertInstanceOf(BigqueryInputDataException::class, $e);
+        self::assertStringContainsString('shuffle operations', $e->getMessage());
+        self::assertStringContainsString('retention', $e->getMessage());
+        self::assertStringContainsString('delete_where', $e->getMessage());
+    }
+
+    public function testCovertExceptionOtherServiceExceptionIsNotUserError(): void
+    {
+        $e = BigqueryException::covertException(new BadRequestException(
+            (string) json_encode([
+                'error' => [
+                    'code' => 400,
+                    'message' => 'Syntax error: Unexpected end of statement at [1:10]',
+                    'status' => 'INVALID_ARGUMENT',
+                ],
+            ]),
+            400,
+        ));
+
+        self::assertInstanceOf(BigqueryException::class, $e);
+        self::assertNotInstanceOf(BigqueryInputDataException::class, $e);
     }
 }
