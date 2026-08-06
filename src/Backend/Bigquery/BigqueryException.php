@@ -78,7 +78,7 @@ class BigqueryException extends Exception
         // last resort: the per-row parse errors above are more actionable, so they keep precedence
         foreach ($jobErrors as $error) {
             if (self::isResourcesExceededError($error['message'])
-                || ($error['reason'] ?? null) === 'resourcesExceeded'
+                || (array_key_exists('reason', $error) && $error['reason'] === 'resourcesExceeded')
             ) {
                 return new BigqueryResourcesExceededException(sprintf(
                     '%s For more information check job "%s" in Google Cloud Console.',
