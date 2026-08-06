@@ -773,6 +773,99 @@ class BigqueryExceptionTest extends TestCase
                 self::assertInstanceOf(BigqueryInputDataException::class, $e);
                 self::assertStringContainsString('shuffle operations', $e->getMessage());
                 self::assertStringContainsString('delete_where', $e->getMessage());
+                // the original BigQuery text and the job id must survive for support
+                self::assertStringContainsString(self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE, $e->getMessage());
+                self::assertStringContainsString('eb64d133-213d-4e99-9cc0-4e37d0c18de9', $e->getMessage());
+            },
+        ];
+
+        yield 'resources exceeded does not shadow a later required column error' => [
+            [
+                'jobReference' => [
+                    'projectId' => 'tf2-56',
+                    'jobId' => 'eb64d133-213d-4e99-9cc0-4e37d0c18de9',
+                    'location' => 'US',
+                ],
+                'status' => [
+                    'errorResult' => [
+                        'reason' => 'resourcesExceeded',
+                        'message' => self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE,
+                    ],
+                    'errors' => [
+                        [
+                            'reason' => 'resourcesExceeded',
+                            'message' => self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE,
+                        ],
+                        [
+                            'reason' => 'invalid',
+                            'message' => 'Required column value is missing: quantity',
+                        ],
+                    ],
+                    'state' => 'DONE',
+                ],
+            ],
+            static function (Throwable $e) {
+                self::assertNotInstanceOf(BigqueryResourcesExceededException::class, $e);
+                self::assertInstanceOf(BigqueryInputDataException::class, $e);
+                self::assertSame('Required column value is missing: quantity', $e->getMessage());
+            },
+        ];
+
+        yield 'resources exceeded does not shadow a later parse error' => [
+            [
+                'jobReference' => [
+                    'projectId' => 'tf2-56',
+                    'jobId' => 'eb64d133-213d-4e99-9cc0-4e37d0c18de9',
+                    'location' => 'US',
+                ],
+                'status' => [
+                    'errorResult' => [
+                        'reason' => 'resourcesExceeded',
+                        'message' => self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE,
+                    ],
+                    'errors' => [
+                        [
+                            'reason' => 'resourcesExceeded',
+                            'message' => self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE,
+                        ],
+                        [
+                            'reason' => 'invalid',
+                            'message' => 'Could not parse \'x\' as INT64 for field quantity',
+                        ],
+                    ],
+                    'state' => 'DONE',
+                ],
+            ],
+            static function (Throwable $e) {
+                self::assertNotInstanceOf(BigqueryResourcesExceededException::class, $e);
+                self::assertInstanceOf(BigqueryInputDataException::class, $e);
+                self::assertStringContainsString('Could not parse', $e->getMessage());
+            },
+        ];
+
+        yield 'error entry without reason key is not a resources exceeded error' => [
+            [
+                'jobReference' => [
+                    'projectId' => 'tf2-56',
+                    'jobId' => 'eb64d133-213d-4e99-9cc0-4e37d0c18de9',
+                    'location' => 'US',
+                ],
+                'status' => [
+                    'errorResult' => [
+                        'message' => 'Query error: something else went wrong',
+                    ],
+                    'errors' => [
+                        [
+                            'message' => 'Query error: something else went wrong',
+                        ],
+                    ],
+                    'state' => 'DONE',
+                ],
+            ],
+            static function (Throwable $e) {
+                self::assertNotInstanceOf(BigqueryInputDataException::class, $e);
+                self::assertInstanceOf(BigqueryException::class, $e);
+                self::assertSame('Query error: something else went wrong', $e->getMessage());
             },
         ];
     }
@@ -803,6 +896,55 @@ class BigqueryExceptionTest extends TestCase
         self::assertStringContainsString('shuffle operations', $e->getMessage());
         self::assertStringContainsString('retention', $e->getMessage());
         self::assertStringContainsString('delete_where', $e->getMessage());
+        // the raw BigQuery payload and the original exception must survive for support
+        self::assertStringContainsString(self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE, $e->getMessage());
+        self::assertInstanceOf(BadRequestException::class, $e->getPrevious());
+    }
+
+    public function testCovertExceptionResourcesExceededOnlyByReason(): void
+    {
+        // a non-shuffle variant still classifies via reason, and the real cause stays visible
+        $memoryMessage = 'Resources exceeded during query execution: The query could not be executed in the '
+            . 'allotted memory. Peak usage: 136% of limit. Top memory consumer(s): ORDER BY operations: 100%';
+
+        $e = BigqueryException::covertException(new BadRequestException(
+            (string) json_encode([
+                'error' => [
+                    'code' => 400,
+                    'message' => $memoryMessage,
+                    'errors' => [
+                        [
+                            'message' => $memoryMessage,
+                            'domain' => 'global',
+                            'reason' => 'resourcesExceeded',
+                        ],
+                    ],
+                    'status' => 'INVALID_ARGUMENT',
+                ],
+            ]),
+            400,
+        ));
+
+        self::assertInstanceOf(BigqueryResourcesExceededException::class, $e);
+        self::assertStringContainsString('ORDER BY operations', $e->getMessage());
+    }
+
+    public function testCovertExceptionResourcesExceededPrefixAloneIsNotMatched(): void
+    {
+        // no shuffle tail and no resourcesExceeded reason -> stays a generic error
+        $e = BigqueryException::covertException(new BadRequestException(
+            (string) json_encode([
+                'error' => [
+                    'code' => 400,
+                    'message' => 'Resources exceeded during query execution.',
+                    'status' => 'INVALID_ARGUMENT',
+                ],
+            ]),
+            400,
+        ));
+
+        self::assertInstanceOf(BigqueryException::class, $e);
+        self::assertNotInstanceOf(BigqueryInputDataException::class, $e);
     }
 
     public function testCovertExceptionOtherServiceExceptionIsNotUserError(): void

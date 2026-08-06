@@ -23,7 +23,7 @@ class BigqueryException extends Exception
                 return new BigqueryInputDataException($e->getMessage());
             }
             if (self::isResourcesExceededError($e->getMessage())) {
-                return new BigqueryResourcesExceededException();
+                return new BigqueryResourcesExceededException($e->getMessage(), $e);
             }
             return new self($e->getMessage());
         }
@@ -51,9 +51,6 @@ class BigqueryException extends Exception
                 $errorMessage = $error['message'];
                 return new BigqueryInputDataException($errorMessage);
             }
-            if ($error['reason'] === 'resourcesExceeded' || self::isResourcesExceededError($error['message'])) {
-                return new BigqueryResourcesExceededException();
-            }
         }
 
         $filteredJobErrors = array_filter(
@@ -78,13 +75,26 @@ class BigqueryException extends Exception
             );
         }
 
+        // last resort: the per-row parse errors above are more actionable, so they keep precedence
+        foreach ($jobErrors as $error) {
+            if (self::isResourcesExceededError($error['message'])
+                || ($error['reason'] ?? null) === 'resourcesExceeded'
+            ) {
+                return new BigqueryResourcesExceededException(sprintf(
+                    '%s For more information check job "%s" in Google Cloud Console.',
+                    $error['message'],
+                    $jobInfo['jobReference']['jobId'],
+                ));
+            }
+        }
+
         return new self($errorMessage);
     }
 
     private static function isResourcesExceededError(string $message): bool
     {
         return str_contains($message, 'resourcesExceeded')
-            || str_contains($message, 'Resources exceeded during query execution');
+            || str_contains($message, 'maximum disk and memory limit available for shuffle operations');
     }
 
     private static function isUserError(string $message, string $reason): bool
