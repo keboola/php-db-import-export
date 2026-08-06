@@ -17,13 +17,8 @@ final class BigqueryResourcesExceededException extends BigqueryInputDataExceptio
         . 'data, apply retention on the destination table, or switch to an append-only strategy '
         . '(e.g. "delete_where" followed by an append without primary keys).';
 
-    public function __construct(string $bigqueryMessage = '', ?Throwable $previous = null)
+    public function __construct(string $bigqueryMessage, ?Throwable $previous = null)
     {
-        $message = self::MESSAGE;
-        if ($bigqueryMessage !== '') {
-            $message .= ' ' . $bigqueryMessage;
-        }
-
-        parent::__construct($message, 0, $previous);
+        parent::__construct(self::MESSAGE . ' ' . $bigqueryMessage, 0, $previous);
     }
 }
