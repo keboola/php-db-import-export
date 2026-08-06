@@ -8,6 +8,7 @@ use Generator;
 use Google\Cloud\Core\Exception\BadRequestException;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryException;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryInputDataException;
+use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryResourcesExceededException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Throwable;
@@ -767,6 +768,8 @@ class BigqueryExceptionTest extends TestCase
                 ],
             ],
             static function (Throwable $e) {
+                self::assertInstanceOf(BigqueryResourcesExceededException::class, $e);
+                // the user-error mapping in the storage driver hangs on this parent
                 self::assertInstanceOf(BigqueryInputDataException::class, $e);
                 self::assertStringContainsString('shuffle operations', $e->getMessage());
                 self::assertStringContainsString('delete_where', $e->getMessage());
@@ -794,6 +797,8 @@ class BigqueryExceptionTest extends TestCase
             400,
         ));
 
+        self::assertInstanceOf(BigqueryResourcesExceededException::class, $e);
+        // the user-error mapping in the storage driver hangs on this parent
         self::assertInstanceOf(BigqueryInputDataException::class, $e);
         self::assertStringContainsString('shuffle operations', $e->getMessage());
         self::assertStringContainsString('retention', $e->getMessage());

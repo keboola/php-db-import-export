@@ -29,7 +29,7 @@ class BigqueryException extends Exception
                 return new BigqueryInputDataException($e->getMessage());
             }
             if (self::isResourcesExceededError($e->getMessage())) {
-                return new BigqueryInputDataException(self::RESOURCES_EXCEEDED_MESSAGE);
+                return new BigqueryResourcesExceededException(self::RESOURCES_EXCEEDED_MESSAGE);
             }
             return new self($e->getMessage());
         }
@@ -58,7 +58,7 @@ class BigqueryException extends Exception
                 return new BigqueryInputDataException($errorMessage);
             }
             if ($error['reason'] === 'resourcesExceeded' || self::isResourcesExceededError($error['message'])) {
-                return new BigqueryInputDataException(self::RESOURCES_EXCEEDED_MESSAGE);
+                return new BigqueryResourcesExceededException(self::RESOURCES_EXCEEDED_MESSAGE);
             }
         }
 
