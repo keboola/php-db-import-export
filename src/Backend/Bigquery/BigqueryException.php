@@ -13,6 +13,12 @@ class BigqueryException extends Exception
 {
     private const MAX_MESSAGES_IN_ERROR_MESSAGE = 10;
 
+    private const RESOURCES_EXCEEDED_MESSAGE = 'The import exceeded the maximum disk and memory limit available '
+        . 'for BigQuery shuffle operations. This usually happens when an incremental load has to deduplicate '
+        . 'and merge a large volume of rows against a large destination table; reduce the amount of loaded '
+        . 'data, apply retention on the destination table, or switch to an append-only strategy '
+        . '(e.g. "delete_where" followed by an append without primary keys).';
+
     public static function covertException(JobException|ServiceException $e): Throwable
     {
         if ($e instanceof ServiceException) {
@@ -23,7 +29,11 @@ class BigqueryException extends Exception
                 return new BigqueryInputDataException($e->getMessage());
             }
             if (self::isResourcesExceededError($e->getMessage())) {
-                return new BigqueryResourcesExceededException($e->getMessage(), $e);
+                return new BigqueryResourcesExceededException(
+                    self::RESOURCES_EXCEEDED_MESSAGE . ' ' . $e->getMessage(),
+                    0,
+                    $e,
+                );
             }
             return new self($e->getMessage());
         }
@@ -81,7 +91,8 @@ class BigqueryException extends Exception
                 || (array_key_exists('reason', $error) && $error['reason'] === 'resourcesExceeded')
             ) {
                 return new BigqueryResourcesExceededException(sprintf(
-                    '%s For more information check job "%s" in Google Cloud Console.',
+                    '%s %s For more information check job "%s" in Google Cloud Console.',
+                    self::RESOURCES_EXCEEDED_MESSAGE,
                     $error['message'],
                     $jobInfo['jobReference']['jobId'],
                 ));
