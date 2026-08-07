@@ -13,11 +13,8 @@ class BigqueryException extends Exception
 {
     private const MAX_MESSAGES_IN_ERROR_MESSAGE = 10;
 
-    private const RESOURCES_EXCEEDED_MESSAGE = 'The import exceeded the maximum disk and memory limit available '
-        . 'for BigQuery shuffle operations. This usually happens when an incremental load has to deduplicate '
-        . 'and merge a large volume of rows against a large destination table; reduce the amount of loaded '
-        . 'data, apply retention on the destination table, or switch to an append-only strategy '
-        . '(e.g. "delete_where" followed by an append without primary keys).';
+    private const RESOURCES_EXCEEDED_MESSAGE = 'Reduce the loaded volume, apply retention on the destination '
+        . 'table, or use an append-only load.';
 
     public static function covertException(JobException|ServiceException $e): Throwable
     {
@@ -30,7 +27,7 @@ class BigqueryException extends Exception
             }
             if (self::isResourcesExceededError($e->getMessage())) {
                 return new BigqueryResourcesExceededException(
-                    self::RESOURCES_EXCEEDED_MESSAGE . ' ' . $e->getMessage(),
+                    self::extractErrorMessage($e->getMessage()) . ' ' . self::RESOURCES_EXCEEDED_MESSAGE,
                     0,
                     $e,
                 );
@@ -92,14 +89,31 @@ class BigqueryException extends Exception
             ) {
                 return new BigqueryResourcesExceededException(sprintf(
                     '%s %s For more information check job "%s" in Google Cloud Console.',
-                    self::RESOURCES_EXCEEDED_MESSAGE,
                     $error['message'],
+                    self::RESOURCES_EXCEEDED_MESSAGE,
                     $jobInfo['jobReference']['jobId'],
                 ));
             }
         }
 
         return new self($errorMessage);
+    }
+
+    /**
+     * ServiceException carries the raw JSON response body, the human sentence is in `error.message`.
+     */
+    private static function extractErrorMessage(string $message): string
+    {
+        $decoded = json_decode($message, true);
+        if (is_array($decoded)
+            && is_array($decoded['error'] ?? null)
+            && is_string($decoded['error']['message'] ?? null)
+            && $decoded['error']['message'] !== ''
+        ) {
+            return $decoded['error']['message'];
+        }
+
+        return $message;
     }
 
     private static function isResourcesExceededError(string $message): bool

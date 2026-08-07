@@ -18,6 +18,10 @@ class BigqueryExceptionTest extends TestCase
     // phpcs:ignore Generic.Files.LineLength
     private const RESOURCES_EXCEEDED_BIGQUERY_MESSAGE = 'Resources exceeded during query execution: Your project or organization exceeded the maximum disk and memory limit available for shuffle operations. Consider provisioning more slots, reducing query concurrency, or using more efficient logic in this job.';
 
+    // the Keboola-side levers appended after the BigQuery text
+    private const ADVICE = 'Reduce the loaded volume, apply retention on the destination table, '
+        . 'or use an append-only load.';
+
     /**
      * @param mixed[]            $job
      * @param callable(Throwable $throwable): void $expectedThrowableAssertion
@@ -771,11 +775,13 @@ class BigqueryExceptionTest extends TestCase
                 self::assertInstanceOf(BigqueryResourcesExceededException::class, $e);
                 // the user-error mapping in the storage driver hangs on this parent
                 self::assertInstanceOf(BigqueryInputDataException::class, $e);
-                self::assertStringContainsString('shuffle operations', $e->getMessage());
-                self::assertStringContainsString('delete_where', $e->getMessage());
-                // the original BigQuery text and the job id must survive for support
-                self::assertStringContainsString(self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE, $e->getMessage());
-                self::assertStringContainsString('eb64d133-213d-4e99-9cc0-4e37d0c18de9', $e->getMessage());
+                // BigQuery text first, then our levers, then the job handle for support
+                self::assertSame(
+                    self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE . ' ' . self::ADVICE
+                    . ' For more information check job "eb64d133-213d-4e99-9cc0-4e37d0c18de9" '
+                    . 'in Google Cloud Console.',
+                    $e->getMessage(),
+                );
             },
         ];
 
@@ -893,11 +899,9 @@ class BigqueryExceptionTest extends TestCase
         self::assertInstanceOf(BigqueryResourcesExceededException::class, $e);
         // the user-error mapping in the storage driver hangs on this parent
         self::assertInstanceOf(BigqueryInputDataException::class, $e);
-        self::assertStringContainsString('shuffle operations', $e->getMessage());
-        self::assertStringContainsString('retention', $e->getMessage());
-        self::assertStringContainsString('delete_where', $e->getMessage());
-        // the raw BigQuery payload and the original exception must survive for support
-        self::assertStringContainsString(self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE, $e->getMessage());
+        // the human sentence is extracted from the JSON body, the payload itself is not pasted in
+        self::assertSame(self::RESOURCES_EXCEEDED_BIGQUERY_MESSAGE . ' ' . self::ADVICE, $e->getMessage());
+        self::assertStringNotContainsString('{"error"', $e->getMessage());
         self::assertInstanceOf(BadRequestException::class, $e->getPrevious());
     }
 
@@ -926,7 +930,18 @@ class BigqueryExceptionTest extends TestCase
         ));
 
         self::assertInstanceOf(BigqueryResourcesExceededException::class, $e);
-        self::assertStringContainsString('ORDER BY operations', $e->getMessage());
+        self::assertSame($memoryMessage . ' ' . self::ADVICE, $e->getMessage());
+        self::assertStringNotContainsString('{"error"', $e->getMessage());
+    }
+
+    public function testCovertExceptionResourcesExceededNonJsonMessageIsKeptIntact(): void
+    {
+        $e = BigqueryException::covertException(
+            new BadRequestException('resourcesExceeded: plain text, not JSON', 400),
+        );
+
+        self::assertInstanceOf(BigqueryResourcesExceededException::class, $e);
+        self::assertSame('resourcesExceeded: plain text, not JSON ' . self::ADVICE, $e->getMessage());
     }
 
     public function testCovertExceptionResourcesExceededPrefixAloneIsNotMatched(): void
