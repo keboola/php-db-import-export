@@ -113,11 +113,16 @@ class SqlBuilder
         BigqueryTableDefinition $sourceTableDefinition,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $importOptions,
+        bool $withAliases = true,
     ): array {
         $columnsSetSql = [];
         /** @var BigqueryColumn $columnDefinition */
         foreach ($sourceTableDefinition->getColumnsDefinitions() as $columnDefinition) {
             $destinationColumn = $this->assertColumnExist($destinationTableDefinition, $columnDefinition);
+            // column aliases are valid in INSERT INTO ... SELECT but a syntax error in MERGE ... VALUES
+            $alias = $withAliases
+                ? ' AS ' . BigqueryQuote::quoteSingleIdentifier($columnDefinition->getColumnName())
+                : '';
             if (in_array($columnDefinition->getColumnName(), $importOptions->getConvertEmptyValuesToNull(), true)) {
                 // use nullif only for string base type
                 if ($columnDefinition->getColumnDefinition()->getBasetype() === BaseType::STRING) {
@@ -131,10 +136,10 @@ class SqlBuilder
                     $destType = $destinationColumn->getColumnDefinition()->getType();
                     if (strtoupper($destType) !== 'STRING') {
                         $columnsSetSql[] = sprintf(
-                            'CAST(%s AS %s) AS %s',
+                            'CAST(%s AS %s)%s',
                             $nullifExpr,
                             $destType,
-                            BigqueryQuote::quoteSingleIdentifier($columnDefinition->getColumnName()),
+                            $alias,
                         );
                     } else {
                         $columnsSetSql[] = $nullifExpr;
@@ -144,21 +149,21 @@ class SqlBuilder
                 }
             } elseif ($columnDefinition->getColumnDefinition()->getBasetype() === BaseType::STRING) {
                 $columnsSetSql[] = sprintf(
-                    'CAST(COALESCE(%s.%s, \'\') as %s) AS %s',
+                    'CAST(COALESCE(%s.%s, \'\') as %s)%s',
                     BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),
                     BigqueryQuote::quoteSingleIdentifier($columnDefinition->getColumnName()),
                     $destinationColumn->getColumnDefinition()->getType(),
-                    BigqueryQuote::quoteSingleIdentifier($columnDefinition->getColumnName()),
+                    $alias,
                 );
             } else {
                 // on columns other than string dont use COALESCE, use direct cast
                 // this will fail if the column is not null, but this is expected
                 $columnsSetSql[] = sprintf(
-                    'CAST(%s.%s as %s) AS %s',
+                    'CAST(%s.%s as %s)%s',
                     BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),
                     BigqueryQuote::quoteSingleIdentifier($columnDefinition->getColumnName()),
                     $destinationColumn->getColumnDefinition()->getType(),
-                    BigqueryQuote::quoteSingleIdentifier($columnDefinition->getColumnName()),
+                    $alias,
                 );
             }
         }
@@ -217,6 +222,7 @@ SQL,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $importOptions,
         string $timestamp,
+        bool $withAliases = true,
     ): array {
         $columnsToInsert = $sourceTableDefinition->getColumnsNames();
         $useTimestamp = !in_array(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME, $columnsToInsert, true)
@@ -245,6 +251,7 @@ SQL,
                 $sourceTableDefinition,
                 $destinationTableDefinition,
                 $importOptions,
+                $withAliases,
             );
         }
 
@@ -484,11 +491,13 @@ SQL,
             $destinationTableDefinition,
             $importOptions,
         );
+        // no column aliases: MERGE ... VALUES rejects `expr AS col` (INSERT ... SELECT allows it)
         [$insertColumns, $insertValues] = $this->getInsertColumnsAndValues(
             $stagingTableDefinition,
             $destinationTableDefinition,
             $importOptions,
             $timestampValue,
+            false,
         );
 
         $dest = sprintf(

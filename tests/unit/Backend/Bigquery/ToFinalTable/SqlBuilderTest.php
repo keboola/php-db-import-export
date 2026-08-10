@@ -205,9 +205,10 @@ class SqlBuilderTest extends TestCase
             . '`price` = CAST(COALESCE(`src`.`price`, \'\') AS NUMERIC), '
             . '`_timestamp` = \'2024-01-01 00:00:00\' '
             . 'WHEN NOT MATCHED THEN INSERT (`id`, `name`, `price`, `_timestamp`) '
-            . 'VALUES (CAST(COALESCE(`src`.`id`, \'\') as INT64) AS `id`,'
+            // no `AS col` aliases here: MERGE ... VALUES rejects them (INSERT ... SELECT allows them)
+            . 'VALUES (CAST(COALESCE(`src`.`id`, \'\') as INT64),'
             . 'NULLIF(`src`.`name`, \'\'),'
-            . 'CAST(COALESCE(`src`.`price`, \'\') as NUMERIC) AS `price`,'
+            . 'CAST(COALESCE(`src`.`price`, \'\') as NUMERIC),'
             . 'CAST(\'2024-01-01 00:00:00\' as TIMESTAMP))',
             $sql,
         );
