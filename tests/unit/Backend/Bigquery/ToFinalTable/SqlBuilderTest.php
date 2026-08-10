@@ -214,7 +214,13 @@ class SqlBuilderTest extends TestCase
         );
     }
 
-    public function testGetMergeCommandTimestampModeFromSourceExcludesTimestampFromComparison(): void
+    /**
+     * Pre-existing behavior carried over unchanged from getUpdateWithPkCommand(): for typed tables,
+     * usingUserDefinedTypes() short-circuits getColumnsComparisonSql() before the FromSource check,
+     * so _timestamp IS still compared here despite TimestampMode::FromSource. The exclusion only
+     * applies on the untyped (string-table) branch.
+     */
+    public function testGetMergeCommandTimestampModeFromSourceWithUserTypesStillComparesTimestamp(): void
     {
         $destination = $this->table('out.c-main', 'dest', [
             $this->col('id', Bigquery::TYPE_INT64),
