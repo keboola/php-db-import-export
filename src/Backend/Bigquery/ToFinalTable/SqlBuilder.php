@@ -381,15 +381,28 @@ SQL,
 
         $groupBySql = $this->getColumnsString($primaryKeys, ', ', self::SRC_ALIAS);
 
+        // struct field access on ANY_VALUE(src) keeps whole-row dedup semantics while producing
+        // named output columns; CLUSTER BY cannot resolve columns of a value table (SELECT AS VALUE)
+        $columnsSql = implode(', ', array_map(
+            static fn(string $columnName) => sprintf(
+                '`a`.%s',
+                BigqueryQuote::quoteSingleIdentifier($columnName),
+            ),
+            $stagingTableDefinition->getColumnsNames(),
+        ));
+
         return sprintf(
             <<< SQL
 CREATE OR REPLACE TABLE %s.%s
 %sAS
-SELECT AS VALUE ANY_VALUE(%s) FROM %s AS %s GROUP BY %s
+SELECT %s FROM (
+    SELECT ANY_VALUE(%s) AS `a` FROM %s AS %s GROUP BY %s
+)
 SQL,
             BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
             BigqueryQuote::quoteSingleIdentifier($dedupTableName),
             $clusterByClause,
+            $columnsSql,
             BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),
             $stage,
             BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),

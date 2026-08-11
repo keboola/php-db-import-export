@@ -86,7 +86,9 @@ class SqlBuilderTest extends TestCase
             <<<SQL
             CREATE OR REPLACE TABLE `in.c-main`.`dedup_1`
             CLUSTER BY `id` AS
-            SELECT AS VALUE ANY_VALUE(`src`) FROM `in.c-main`.`stage` AS `src` GROUP BY src.`id`
+            SELECT `a`.`id`, `a`.`name` FROM (
+                SELECT ANY_VALUE(`src`) AS `a` FROM `in.c-main`.`stage` AS `src` GROUP BY src.`id`
+            )
             SQL,
             $sql,
         );
@@ -107,7 +109,9 @@ class SqlBuilderTest extends TestCase
             <<<SQL
             CREATE OR REPLACE TABLE `in.c-main`.`dedup_2`
             AS
-            SELECT AS VALUE ANY_VALUE(`src`) FROM `in.c-main`.`stage` AS `src` GROUP BY src.`id`, src.`geo`
+            SELECT `a`.`id`, `a`.`geo`, `a`.`name` FROM (
+                SELECT ANY_VALUE(`src`) AS `a` FROM `in.c-main`.`stage` AS `src` GROUP BY src.`id`, src.`geo`
+            )
             SQL,
             $sql,
         );
@@ -137,7 +141,9 @@ class SqlBuilderTest extends TestCase
             <<<SQL
             CREATE OR REPLACE TABLE `in.c-main`.`dedup_3`
             CLUSTER BY `pk1`, `pk2`, `pk3`, `pk4` AS
-            SELECT AS VALUE ANY_VALUE(`src`) FROM `in.c-main`.`stage` AS `src` GROUP BY src.`pk1`, src.`pk2`, src.`pk3`, src.`pk4`, src.`pk5`
+            SELECT `a`.`pk1`, `a`.`pk2`, `a`.`pk3`, `a`.`pk4`, `a`.`pk5`, `a`.`val` FROM (
+                SELECT ANY_VALUE(`src`) AS `a` FROM `in.c-main`.`stage` AS `src` GROUP BY src.`pk1`, src.`pk2`, src.`pk3`, src.`pk4`, src.`pk5`
+            )
             SQL,
             $sql,
         );
