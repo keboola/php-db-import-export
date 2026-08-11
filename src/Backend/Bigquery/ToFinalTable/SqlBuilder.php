@@ -379,16 +379,28 @@ SQL,
             BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
         );
 
-        $groupBySql = $this->getColumnsString($primaryKeys, ', ', self::SRC_ALIAS);
+        $columnNames = $stagingTableDefinition->getColumnsNames();
+        // bare range-variable references (ANY_VALUE(src), a.col) must not collide with column names
+        $srcAlias = self::SRC_ALIAS;
+        while (in_array($srcAlias, $columnNames, true)) {
+            $srcAlias .= '_';
+        }
+        $rowAlias = 'a';
+        while (in_array($rowAlias, $columnNames, true) || $rowAlias === $srcAlias) {
+            $rowAlias .= '_';
+        }
+
+        $groupBySql = $this->getColumnsString($primaryKeys, ', ', $srcAlias);
 
         // struct field access on ANY_VALUE(src) keeps whole-row dedup semantics while producing
         // named output columns; CLUSTER BY cannot resolve columns of a value table (SELECT AS VALUE)
         $columnsSql = implode(', ', array_map(
             static fn(string $columnName) => sprintf(
-                '`a`.%s',
+                '%s.%s',
+                BigqueryQuote::quoteSingleIdentifier($rowAlias),
                 BigqueryQuote::quoteSingleIdentifier($columnName),
             ),
-            $stagingTableDefinition->getColumnsNames(),
+            $columnNames,
         ));
 
         return sprintf(
@@ -396,16 +408,17 @@ SQL,
 CREATE OR REPLACE TABLE %s.%s
 %sAS
 SELECT %s FROM (
-    SELECT ANY_VALUE(%s) AS `a` FROM %s AS %s GROUP BY %s
+    SELECT ANY_VALUE(%s) AS %s FROM %s AS %s GROUP BY %s
 )
 SQL,
             BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
             BigqueryQuote::quoteSingleIdentifier($dedupTableName),
             $clusterByClause,
             $columnsSql,
-            BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            BigqueryQuote::quoteSingleIdentifier($srcAlias),
+            BigqueryQuote::quoteSingleIdentifier($rowAlias),
             $stage,
-            BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            BigqueryQuote::quoteSingleIdentifier($srcAlias),
             $groupBySql,
         );
     }

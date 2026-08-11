@@ -150,6 +150,29 @@ class SqlBuilderTest extends TestCase
         // phpcs:enable Generic.Files.LineLength.MaxExceeded
     }
 
+    public function testGetCreateDedupTableOptimizedAvoidsAliasCollisionWithColumnNames(): void
+    {
+        // user columns named like the range-variable aliases must not shadow them
+        $staging = $this->table('in.c-main', 'stage', [
+            $this->col('src', Bigquery::TYPE_STRING),
+            $this->col('a', Bigquery::TYPE_STRING),
+            $this->col('name', Bigquery::TYPE_STRING),
+        ]);
+
+        $sql = $this->getInstance()->getCreateDedupTable($staging, 'dedup_6', ['src'], true);
+
+        self::assertSame(
+            <<<SQL
+            CREATE OR REPLACE TABLE `in.c-main`.`dedup_6`
+            CLUSTER BY `src` AS
+            SELECT `a_`.`src`, `a_`.`a`, `a_`.`name` FROM (
+                SELECT ANY_VALUE(`src_`) AS `a_` FROM `in.c-main`.`stage` AS `src_` GROUP BY src_.`src`
+            )
+            SQL,
+            $sql,
+        );
+    }
+
     public function testGetMergeCommandTypedTable(): void
     {
         $destination = $this->table('out.c-main', 'dest', [
