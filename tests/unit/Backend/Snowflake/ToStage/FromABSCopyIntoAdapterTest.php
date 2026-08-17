@@ -31,7 +31,7 @@ class FromABSCopyIntoAdapterTest extends BaseTestCase
 
         $conn = $this->mockConnection();
         // phpcs:disable
-        $conn->expects(self::once())->method('executeStatement')->with(
+        $conn->expects(self::once())->method('fetchAllAssociative')->with(
             <<<EOT
 COPY INTO "schema"."stagingTable" 
 FROM 'azure://xxx.blob.core.windows.net/xx/'
@@ -39,18 +39,8 @@ CREDENTIALS=(AZURE_SAS_TOKEN='')
 FILE_FORMAT = (TYPE=CSV FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '\"' ESCAPE_UNENCLOSED_FIELD = NONE, NULL_IF=(''))
 FILES = ('xxx.csv')
 EOT
-        );
+        )->willReturn([['rows_loaded' => 10]]);
         // phpcs:enable
-        $conn->expects(self::once())->method('fetchAllAssociative')
-            // phpcs:ignore
-            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT,LAST_ALTERED FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
-            ->willReturn(
-                [
-                [
-                    'TABLE_TYPE' => 'BASE TABLE', 'BYTES' => 0, 'ROW_COUNT' => 10,
-                ],
-                ],
-            );
 
         $destination = new SnowflakeTableDefinition(
             'schema',
@@ -83,7 +73,7 @@ EOT
 
         $conn = $this->mockConnection();
         // phpcs:disable
-        $conn->expects(self::once())->method('executeStatement')->with(
+        $conn->expects(self::once())->method('fetchAllAssociative')->with(
             <<<EOT
 COPY INTO "schema"."stagingTable" 
 FROM 'azure://xxx.blob.core.windows.net/xx/'
@@ -91,18 +81,8 @@ CREDENTIALS=(AZURE_SAS_TOKEN='')
 FILE_FORMAT = (TYPE=CSV FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '\"' ESCAPE_UNENCLOSED_FIELD = NONE, NULL_IF=('','NULL'))
 FILES = ('xxx.csv')
 EOT
-        );
+        )->willReturn([['rows_loaded' => 10]]);
         // phpcs:enable
-        $conn->expects(self::once())->method('fetchAllAssociative')
-            // phpcs:ignore
-            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT,LAST_ALTERED FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
-            ->willReturn(
-                [
-                [
-                    'TABLE_TYPE' => 'BASE TABLE', 'BYTES' => 0, 'ROW_COUNT' => 10,
-                ],
-                ],
-            );
 
         $destination = new SnowflakeTableDefinition(
             'schema',
@@ -137,7 +117,7 @@ EOT
 
         $conn = $this->mockConnection();
         // phpcs:disable
-        $conn->expects(self::once())->method('executeStatement')->with(
+        $conn->expects(self::once())->method('fetchAllAssociative')->with(
             <<<EOT
 COPY INTO "schema"."stagingTable" 
 FROM 'azure://xxx.blob.core.windows.net/xx/'
@@ -145,18 +125,8 @@ CREDENTIALS=(AZURE_SAS_TOKEN='')
 FILE_FORMAT = (TYPE=CSV FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '\"' ESCAPE_UNENCLOSED_FIELD = NONE, NULL_IF=())
 FILES = ('xxx.csv')
 EOT
-        );
+        )->willReturn([['rows_loaded' => 10]]);
         // phpcs:enable
-        $conn->expects(self::once())->method('fetchAllAssociative')
-            // phpcs:ignore
-            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT,LAST_ALTERED FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
-            ->willReturn(
-                [
-                [
-                    'TABLE_TYPE' => 'BASE TABLE', 'BYTES' => 0, 'ROW_COUNT' => 10,
-                ],
-                ],
-            );
 
         $destination = new SnowflakeTableDefinition(
             'schema',
@@ -191,7 +161,7 @@ EOT
 
         $conn = $this->mockConnection();
         // phpcs:disable
-        $conn->expects(self::once())->method('executeStatement')->with(
+        $conn->expects(self::once())->method('fetchAllAssociative')->with(
             <<<EOT
 COPY INTO "schema"."stagingTable" 
 FROM 'azure://xxx.blob.core.windows.net/xx/'
@@ -199,19 +169,8 @@ CREDENTIALS=(AZURE_SAS_TOKEN='')
 FILE_FORMAT = (TYPE=CSV FIELD_DELIMITER = ',' SKIP_HEADER = 3 FIELD_OPTIONALLY_ENCLOSED_BY = '\"' ESCAPE_UNENCLOSED_FIELD = NONE, NULL_IF=(''))
 FILES = ('xxx.csv')
 EOT
-        );
+        )->willReturn([['rows_loaded' => 7]]);
         // phpcs:enable
-
-        $conn->expects(self::once())->method('fetchAllAssociative')
-            // phpcs:ignore
-            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT,LAST_ALTERED FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
-            ->willReturn(
-                [
-                [
-                    'TABLE_TYPE' => 'BASE TABLE', 'BYTES' => 0, 'ROW_COUNT' => 7,
-                ],
-                ],
-            );
 
         $destination = new SnowflakeTableDefinition(
             'schema',
@@ -265,28 +224,19 @@ EOT;
         $q1 = sprintf($qTemplate, implode(', ', array_slice($entriesWithoutBucket, 0, 1000)));
         $q2 = sprintf($qTemplate, implode(', ', array_slice($entriesWithoutBucket, 1000, 5)));
         $matcher = self::exactly(2);
-        $conn->expects($matcher)->method('executeStatement')->willReturnCallback(
-            function (...$parameters) use ($matcher, $q1, $q2) {
+        // Rows loaded are summed over the file chunks a single load is split into.
+        $conn->expects($matcher)->method('fetchAllAssociative')->willReturnCallback(
+            function (...$parameters) use ($matcher, $q1, $q2): array {
                 if ($matcher->numberOfInvocations() === 1) {
                     $this->assertSame($q1, $parameters[0]);
+
+                    return [['rows_loaded' => 4]];
                 }
-                if ($matcher->numberOfInvocations() === 2) {
-                    $this->assertSame($q2, $parameters[0]);
-                }
+                $this->assertSame($q2, $parameters[0]);
+
+                return [['rows_loaded' => 3]];
             },
         );
-
-        $conn->expects(self::once())->method('fetchAllAssociative')
-            // phpcs:ignore
-            ->with("SELECT TABLE_TYPE,BYTES,ROW_COUNT,COMMENT,LAST_ALTERED FROM information_schema.tables WHERE TABLE_SCHEMA = 'schema' AND TABLE_NAME = 'stagingTable';")
-            ->willReturn(
-                [
-                [
-                    'TABLE_TYPE' => 'BASE TABLE', 'BYTES' => 0, 'ROW_COUNT' => 7,
-                ],
-                ],
-            );
-
         $destination = new SnowflakeTableDefinition(
             'schema',
             'stagingTable',

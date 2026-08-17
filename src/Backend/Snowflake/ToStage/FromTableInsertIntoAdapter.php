@@ -9,6 +9,7 @@ use Doctrine\DBAL\Exception;
 use Keboola\Datatype\Definition\Snowflake;
 use Keboola\Db\ImportExport\Backend\Assert;
 use Keboola\Db\ImportExport\Backend\CopyAdapterInterface;
+use Keboola\Db\ImportExport\Backend\Snowflake\LoadedRowsCount;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Exception\ColumnsMismatchException;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
@@ -98,17 +99,13 @@ class FromTableInsertIntoAdapter implements CopyAdapterInterface
         }
 
         if ($source instanceof SelectSource) {
-            $this->connection->executeQuery($sql, $source->getQueryBindings(), $source->getDataTypes());
+            $result = $this->connection->executeQuery($sql, $source->getQueryBindings(), $source->getDataTypes());
         } else {
-            $this->connection->executeStatement($sql);
+            $result = $this->connection->executeQuery($sql);
         }
 
-        $ref = new SnowflakeTableReflection(
-            $this->connection,
-            $destination->getSchemaName(),
-            $destination->getTableName(),
-        );
-
-        return $ref->getRowsCount();
+        // The staging table is created empty for this load, so the rows reported by the INSERT are
+        // the entire content of the table and no row count query is needed on top of it.
+        return LoadedRowsCount::fromInsertResult($result->fetchAssociative());
     }
 }
