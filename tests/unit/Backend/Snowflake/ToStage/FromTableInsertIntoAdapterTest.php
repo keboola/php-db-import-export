@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportUnit\Backend\Snowflake\ToStage;
 
-use Doctrine\DBAL\Result;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToStage\FromTableInsertIntoAdapter;
 use Keboola\Db\ImportExport\Storage;
@@ -23,11 +22,11 @@ class FromTableInsertIntoAdapterTest extends BaseTestCase
         $source = new Storage\Snowflake\Table('test_schema', 'test_table', ['col1', 'col2']);
 
         $conn = $this->mockConnection();
-        $conn->expects(self::never())->method('executeStatement');
-        $conn->expects(self::once())->method('executeQuery')->with(
+        $conn->expects(self::never())->method('executeQuery');
+        $conn->expects(self::once())->method('executeStatement')->with(
         // phpcs:ignore
             'INSERT INTO "test_schema"."stagingTable" ("col1", "col2") SELECT "col1", "col2" FROM "test_schema"."test_table"'
-        )->willReturn($this->mockInsertResult(10));
+        )->willReturn(10);
 
         $destination = new SnowflakeTableDefinition(
             'test_schema',
@@ -61,12 +60,13 @@ class FromTableInsertIntoAdapterTest extends BaseTestCase
         );
 
         $conn = $this->mockConnection();
-        $conn->expects(self::once())->method('executeQuery')->with(
+        $conn->expects(self::never())->method('executeQuery');
+        $conn->expects(self::once())->method('executeStatement')->with(
         // phpcs:ignore
             'INSERT INTO "test_schema"."stagingTable" ("col1", "col2") SELECT * FROM "test_schema"."test_table"',
             ['bind' => 'val'],
             [1],
-        )->willReturn($this->mockInsertResult(10));
+        )->willReturn(10);
 
         $destination = new SnowflakeTableDefinition(
             'test_schema',
@@ -87,13 +87,5 @@ class FromTableInsertIntoAdapterTest extends BaseTestCase
         );
 
         self::assertEquals(10, $count);
-    }
-
-    private function mockInsertResult(int $insertedRows): Result
-    {
-        $result = $this->createStub(Result::class);
-        $result->method('fetchAssociative')->willReturn(['number of rows inserted' => $insertedRows]);
-
-        return $result;
     }
 }

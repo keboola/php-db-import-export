@@ -9,7 +9,6 @@ use Doctrine\DBAL\Exception;
 use Keboola\Datatype\Definition\Snowflake;
 use Keboola\Db\ImportExport\Backend\Assert;
 use Keboola\Db\ImportExport\Backend\CopyAdapterInterface;
-use Keboola\Db\ImportExport\Backend\Snowflake\LoadedRowsCount;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Exception\ColumnsMismatchException;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
@@ -99,13 +98,18 @@ class FromTableInsertIntoAdapter implements CopyAdapterInterface
         }
 
         if ($source instanceof SelectSource) {
-            $result = $this->connection->executeQuery($sql, $source->getQueryBindings(), $source->getDataTypes());
+            $insertedRows = $this->connection->executeStatement(
+                $sql,
+                $source->getQueryBindings(),
+                $source->getDataTypes(),
+            );
         } else {
-            $result = $this->connection->executeQuery($sql);
+            $insertedRows = $this->connection->executeStatement($sql);
         }
 
-        // The staging table is created empty for this load, so the rows reported by the INSERT are
-        // the entire content of the table and no row count query is needed on top of it.
-        return LoadedRowsCount::fromInsertResult($result->fetchAssociative());
+        // The staging table is created empty for this load, so the rows the INSERT affected are the
+        // entire content of the table. The driver is ODBC-backed: the count comes from
+        // odbc_num_rows(), while an INSERT exposes no result set rows to read.
+        return (int) $insertedRows;
     }
 }
