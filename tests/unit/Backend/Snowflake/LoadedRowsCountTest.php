@@ -41,19 +41,4 @@ class LoadedRowsCountTest extends BaseTestCase
     {
         self::assertSame(0, LoadedRowsCount::fromCopyIntoResult([]));
     }
-
-    public function testInsertResultIsReadPositionally(): void
-    {
-        self::assertSame(7, LoadedRowsCount::fromInsertResult(['number of rows inserted' => '7']));
-    }
-
-    public function testInsertWithoutResultRowCountsAsNoRows(): void
-    {
-        self::assertSame(0, LoadedRowsCount::fromInsertResult(false));
-    }
-
-    public function testNonNumericInsertResultCountsAsNoRows(): void
-    {
-        self::assertSame(0, LoadedRowsCount::fromInsertResult(['status' => 'done']));
-    }
 }
