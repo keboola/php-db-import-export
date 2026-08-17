@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Keboola\Db\ImportExport\Backend\CopyAdapterInterface;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\CopyCommandCsvOptionsHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\QuoteHelper;
+use Keboola\Db\ImportExport\Backend\Snowflake\LoadedRowsCount;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeException;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
@@ -16,7 +17,6 @@ use Keboola\Db\ImportExport\Storage\ABS\BaseFile;
 use Keboola\Db\ImportExport\Storage\ABS\SourceFile;
 use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableDefinition;
-use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableReflection;
 use Keboola\TableBackendUtils\Table\TableDefinitionInterface;
 use Throwable;
 
@@ -41,6 +41,9 @@ class FromABSCopyIntoAdapter implements CopyAdapterInterface
         TableDefinitionInterface $destination,
         ImportOptionsInterface $importOptions,
     ): int {
+        // The staging table is created empty for this load, so the rows reported by COPY INTO are
+        // the entire content of the table and no row count query is needed on top of it.
+        $rowsLoaded = 0;
         try {
             $files = $source->getManifestEntries();
             foreach (array_chunk($files, self::SLICED_FILES_CHUNK_SIZE) as $files) {
@@ -50,21 +53,15 @@ class FromABSCopyIntoAdapter implements CopyAdapterInterface
                     $importOptions,
                     $files,
                 );
-                $this->connection->executeStatement(
-                    $cmd,
+                $rowsLoaded += LoadedRowsCount::fromCopyIntoResult(
+                    $this->connection->fetchAllAssociative($cmd),
                 );
             }
         } catch (Throwable $e) {
             throw SnowflakeException::covertException($e);
         }
 
-        $ref = new SnowflakeTableReflection(
-            $this->connection,
-            $destination->getSchemaName(),
-            $destination->getTableName(),
-        );
-
-        return $ref->getRowsCount();
+        return $rowsLoaded;
     }
 
     /**
