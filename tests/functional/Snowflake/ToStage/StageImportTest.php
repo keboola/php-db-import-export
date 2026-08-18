@@ -9,6 +9,7 @@ use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToStage\ToStageImporter;
 use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
 use Keboola\Db\ImportExport\Exception\ColumnsMismatchException;
+use Keboola\Db\ImportExport\Storage\Snowflake\SelectSource;
 use Keboola\Db\ImportExport\Storage\Snowflake\Table;
 use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableReflection;
@@ -70,6 +71,41 @@ class StageImportTest extends SnowflakeBaseTestCase
         );
 
         self::assertSame($dataSource, $dataDest);
+    }
+
+    public function testMoveDataFromSelectSourceReportsTheStagedRowCount(): void
+    {
+        $this->initSingleTable($this->getSourceSchemaName(), 'sourceTable');
+        $this->initSingleTable($this->getDestinationSchemaName(), 'targetTable');
+
+        $this->insertRowToTable($this->getSourceSchemaName(), 'sourceTable', 1, 'a', 'b');
+        $this->insertRowToTable($this->getSourceSchemaName(), 'sourceTable', 2, 'c', 'd');
+        $this->insertRowToTable($this->getSourceSchemaName(), 'sourceTable', 3, 'e', 'f');
+
+        $importer = new ToStageImporter($this->connection);
+        $targetTableRef = new SnowflakeTableReflection(
+            $this->connection,
+            $this->getDestinationSchemaName(),
+            'targetTable',
+        );
+
+        $source = new SelectSource(
+            sprintf(
+                'SELECT "id", "first_name", "last_name" FROM %s.%s WHERE "id" > :minId',
+                SnowflakeQuote::quoteSingleIdentifier($this->getSourceSchemaName()),
+                SnowflakeQuote::quoteSingleIdentifier('sourceTable'),
+            ),
+            ['minId' => 1],
+            ['id', 'first_name', 'last_name'],
+        );
+
+        $state = $importer->importToStagingTable(
+            $source,
+            $targetTableRef->getTableDefinition(),
+            $this->getSnowflakeImportOptions(),
+        );
+
+        self::assertSame(2, $state->getResult()->getImportedRowsCount());
     }
 
     public function testMoveDataFromAToTableWithWrongSourceStructure(): void
