@@ -9,6 +9,14 @@ use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 
 class SnowflakeImportOptions extends ImportOptions
 {
+    /**
+     * Escape hatch back to the multi-statement import: a dedup table plus UPDATE/DELETE/INSERT for
+     * incremental loads, TRUNCATE plus INSERT inside an explicit transaction for full loads. The
+     * single-statement path (MERGE / INSERT OVERWRITE) is the default, so a project only needs this
+     * feature if the single-statement path misbehaves for it.
+     */
+    public const FEATURE_LEGACY_IMPORT = 'snowflake-legacy-import';
+
     /** @var self::SAME_TABLES_* */
     private bool $requireSameTables;
 
@@ -56,6 +64,11 @@ class SnowflakeImportOptions extends ImportOptions
     public function isNullManipulationEnabled(): bool
     {
         return $this->nullManipulation === self::NULL_MANIPULATION_ENABLED;
+    }
+
+    public function useOptimizedImport(): bool
+    {
+        return !in_array(self::FEATURE_LEGACY_IMPORT, $this->features(), true);
     }
 
     public function getNullIfSql(): string

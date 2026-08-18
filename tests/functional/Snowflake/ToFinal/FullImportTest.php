@@ -297,6 +297,72 @@ select 1,
         self::assertEquals(4, $destinationRef->getRowsCount());
     }
 
+    /**
+     * Same scenario as testLoadToTableWithDedupWithSinglePK(), but with the snowflake-legacy-import
+     * feature, which routes the load through the dedup table and TRUNCATE + INSERT in a transaction
+     * instead of a single INSERT OVERWRITE. Both must deduplicate to the same rows.
+     */
+    public function testLoadToTableWithDedupWithSinglePKLegacyImport(): void
+    {
+        $this->initTable(self::TABLE_SINGLE_PK);
+
+        // skipping header
+        $options = $this->getSnowflakeImportOptions(
+            1,
+            false,
+            [SnowflakeImportOptions::FEATURE_LEGACY_IMPORT],
+        );
+        $source = $this->getSourceInstance(
+            'multi-pk.csv',
+            [
+                'VisitID',
+                'Value',
+                'MenuItem',
+                'Something',
+                'Other',
+            ],
+            false,
+            false,
+            ['VisitID'],
+        );
+
+        $importer = new ToStageImporter($this->connection);
+        $destinationRef = new SnowflakeTableReflection(
+            $this->connection,
+            $this->getDestinationSchemaName(),
+            self::TABLE_SINGLE_PK,
+        );
+        $destination = $destinationRef->getTableDefinition();
+        $stagingTable = StageTableDefinitionFactory::createStagingTableDefinition(
+            $destination,
+            [
+            'VisitID',
+            'Value',
+            'MenuItem',
+            'Something',
+            'Other',
+            ],
+        );
+        $qb = new SnowflakeTableQueryBuilder();
+        $this->connection->executeStatement(
+            $qb->getCreateTableCommandFromDefinition($stagingTable),
+        );
+        $importState = $importer->importToStagingTable(
+            $source,
+            $stagingTable,
+            $options,
+        );
+        $toFinalTableImporter = new FullImporter($this->connection);
+        $toFinalTableImporter->importToTable(
+            $stagingTable,
+            $destination,
+            $options,
+            $importState,
+        );
+
+        self::assertEquals(4, $destinationRef->getRowsCount());
+    }
+
     public function testLoadToTableWithDedupWithMultiPK(): void
     {
         $this->initTable(self::TABLE_MULTI_PK);

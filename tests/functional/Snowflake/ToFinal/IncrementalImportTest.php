@@ -32,8 +32,12 @@ use Tests\Keboola\Db\ImportExportFunctional\Snowflake\SnowflakeBaseTestCase;
 
 class IncrementalImportTest extends SnowflakeBaseTestCase
 {
+    /**
+     * @param string[] $features
+     */
     protected static function getSnowflakeIncrementalImportOptions(
         int $skipLines = ImportOptions::SKIP_FIRST_LINE,
+        array $features = [],
     ): SnowflakeImportOptions {
         return new SnowflakeImportOptions(
             convertEmptyValuesToNull: [],
@@ -41,6 +45,7 @@ class IncrementalImportTest extends SnowflakeBaseTestCase
             useTimestamp: true,
             numberOfIgnoredLines: $skipLines,
             ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
+            features: $features,
         );
     }
 
@@ -348,6 +353,113 @@ SELECT 2,
             3, // 4 rows in CSV but (200,,"ukulele") is duplicated, so 3 unique PKs
             self::TABLE_MULTI_PK_WITH_TS,
         ];
+    }
+
+    /**
+     * Same scenario as the 'simple' case of testIncrementalImport(), but with the
+     * snowflake-legacy-import feature, which runs the load as a dedup table plus UPDATE/DELETE/INSERT
+     * instead of a single MERGE. Both paths must end up with the same rows and the same reported count.
+     */
+    public function testIncrementalImportLegacyImport(): void
+    {
+        $this->initTable(self::TABLE_ACCOUNTS_3);
+
+        $accountsStub = static::getParseCsvStub('expectation.tw_accounts.increment.csv');
+        $fullLoadSource = $this->getSourceInstance(
+            'tw_accounts.csv',
+            $accountsStub->getColumns(),
+            false,
+            false,
+            ['id'],
+        );
+        $incrementalSource = $this->getSourceInstance(
+            'tw_accounts.increment.csv',
+            $accountsStub->getColumns(),
+            false,
+            false,
+            ['id'],
+        );
+        $fullLoadOptions = self::getSnowflakeImportOptions(
+            ImportOptions::SKIP_FIRST_LINE,
+            true,
+            [SnowflakeImportOptions::FEATURE_LEGACY_IMPORT],
+        );
+        $incrementalOptions = self::getSnowflakeIncrementalImportOptions(
+            ImportOptions::SKIP_FIRST_LINE,
+            [SnowflakeImportOptions::FEATURE_LEGACY_IMPORT],
+        );
+
+        $destination = (new SnowflakeTableReflection(
+            $this->connection,
+            $this->getDestinationSchemaName(),
+            self::TABLE_ACCOUNTS_3,
+        ))->getTableDefinition();
+        assert($destination instanceof SnowflakeTableDefinition);
+
+        $toStageImporter = new ToStageImporter($this->connection);
+        $qb = new SnowflakeTableQueryBuilder();
+        $sqlBuilder = new SqlBuilder();
+
+        $fullLoadStagingTable = StageTableDefinitionFactory::createStagingTableDefinition(
+            $destination,
+            $fullLoadSource->getColumnsNames(),
+        );
+        $incrementalLoadStagingTable = StageTableDefinitionFactory::createStagingTableDefinition(
+            $destination,
+            $incrementalSource->getColumnsNames(),
+        );
+
+        try {
+            $this->connection->executeStatement(
+                $qb->getCreateTableCommandFromDefinition($fullLoadStagingTable),
+            );
+            $importState = $toStageImporter->importToStagingTable(
+                $fullLoadSource,
+                $fullLoadStagingTable,
+                $fullLoadOptions,
+            );
+            (new FullImporter($this->connection))->importToTable(
+                $fullLoadStagingTable,
+                $destination,
+                $fullLoadOptions,
+                $importState,
+            );
+
+            $this->connection->executeStatement(
+                $qb->getCreateTableCommandFromDefinition($incrementalLoadStagingTable),
+            );
+            $importState = $toStageImporter->importToStagingTable(
+                $incrementalSource,
+                $incrementalLoadStagingTable,
+                $incrementalOptions,
+            );
+            $result = (new IncrementalImporter($this->connection))->importToTable(
+                $incrementalLoadStagingTable,
+                $destination,
+                $incrementalOptions,
+                $importState,
+            );
+        } finally {
+            foreach ([$fullLoadStagingTable, $incrementalLoadStagingTable] as $stagingTable) {
+                $this->connection->executeStatement(
+                    $sqlBuilder->getDropTableIfExistsCommand(
+                        $stagingTable->getSchemaName(),
+                        $stagingTable->getTableName(),
+                    ),
+                );
+            }
+        }
+
+        // 4 rows in the increment CSV but id=18 is duplicated, so 3 unique PKs
+        self::assertEquals(3, $result->getImportedRowsCount());
+
+        $this->assertSnowflakeTableEqualsExpected(
+            $fullLoadSource,
+            $destination,
+            $incrementalOptions,
+            $accountsStub->getRows(),
+            0,
+        );
     }
 
     /**

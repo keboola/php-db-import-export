@@ -176,17 +176,210 @@ class SqlBuilder
         SnowflakeImportOptions $importOptions,
         string $timestamp,
     ): string {
+        [$insColumns, $columnsSetSql] = $this->getInsertColumnsAndValues(
+            $sourceTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+            $timestamp,
+            false,
+        );
+
+        return sprintf(
+            'INSERT INTO %s (%s) (SELECT %s FROM %s.%s AS %s)',
+            $this->getTableReference($destinationTableDefinition),
+            $this->getColumnsString($insColumns),
+            implode(',', $columnsSetSql),
+            SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
+            SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
+            SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+        );
+    }
+
+    /**
+     * Replaces the whole destination content in one statement. Snowflake truncates the target as part
+     * of the INSERT, so neither an explicit transaction nor a separate TRUNCATE is needed, and unlike a
+     * CTAS the table object — and with it the grants on it — is kept. Passing $dedupPrimaryKeys drops
+     * duplicate rows inline instead of through an intermediate dedup table.
+     *
+     * @param string[] $dedupPrimaryKeys
+     */
+    public function getInsertOverwriteAllIntoTargetTableCommand(
+        SnowflakeTableDefinition $sourceTableDefinition,
+        SnowflakeTableDefinition $destinationTableDefinition,
+        SnowflakeImportOptions $importOptions,
+        string $timestamp,
+        array $dedupPrimaryKeys = [],
+    ): string {
+        [$insColumns, $columnsSetSql] = $this->getInsertColumnsAndValues(
+            $sourceTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+            $timestamp,
+            false,
+        );
+
+        return sprintf(
+            'INSERT OVERWRITE INTO %s (%s) (SELECT %s FROM %s.%s AS %s%s)',
+            $this->getTableReference($destinationTableDefinition),
+            $this->getColumnsString($insColumns),
+            implode(',', $columnsSetSql),
+            SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
+            SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
+            SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            $this->getDedupQualifyClause($dedupPrimaryKeys),
+        );
+    }
+
+    /**
+     * Applies the whole incremental import as one atomic statement: matched rows are updated in place,
+     * unmatched rows inserted, and duplicates in the source are collapsed inline. The source subquery
+     * exposes the raw staging columns, so the UPDATE and INSERT branches apply the null/cast handling
+     * themselves, exactly as the separate UPDATE and INSERT statements do.
+     */
+    public function getMergeCommand(
+        SnowflakeTableDefinition $stagingTableDefinition,
+        SnowflakeTableDefinition $destinationTableDefinition,
+        SnowflakeImportOptions $importOptions,
+        string $timestamp,
+    ): string {
+        $columnsSet = $this->getColumnsSetForUpdate(
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+            $timestamp,
+        );
+        $columnsComparisonSql = $this->getColumnsComparisonSql(
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+        );
+        [$insColumns, $insValues] = $this->getInsertColumnsAndValues(
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $importOptions,
+            $timestamp,
+            true,
+        );
+
+        $source = sprintf(
+            '(SELECT %s FROM %s.%s AS %s%s)',
+            $this->getColumnsString($stagingTableDefinition->getColumnsNames()),
+            SnowflakeQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
+            SnowflakeQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
+            SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            // dedup on the same key the ON condition joins by: with null manipulation a NULL and an
+            // empty string collapse to the same key, and two source rows matching one target row is
+            // what ERROR_ON_NONDETERMINISTIC_MERGE rejects
+            $this->getDedupQualifyClause(
+                $destinationTableDefinition->getPrimaryKeysNames(),
+                $importOptions->isNullManipulationEnabled(),
+            ),
+        );
+
+        // an empty comparison list means there is nothing that could have changed, so the update
+        // applies unconditionally - the same fallback getUpdateWithPkCommand() uses
+        $matchedCondition = $columnsComparisonSql === []
+            ? ''
+            : sprintf(' AND (%s)', implode(' OR ', $columnsComparisonSql));
+
+        return sprintf(
+            'MERGE INTO %s AS "dest" USING %s AS %s ON %s'
+            . ' WHEN MATCHED%s THEN UPDATE SET %s'
+            . ' WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)',
+            $this->getTableReference($destinationTableDefinition),
+            $source,
+            SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            $this->getPrimayKeyWhereConditions(
+                $destinationTableDefinition->getPrimaryKeysNames(),
+                $importOptions,
+            ),
+            $matchedCondition,
+            implode(', ', $columnsSet),
+            $this->getColumnsString($insColumns),
+            implode(',', $insValues),
+        );
+    }
+
+    /**
+     * Keeps one row per primary key, picked the same way the dedup table picks it: ROW_NUMBER() ordered
+     * by the primary key, i.e. an arbitrary but single row among duplicates. The window references the
+     * columns through the source alias so it partitions on the raw values rather than on the SELECT
+     * list expressions, matching what deduplicating into a separate table does.
+     *
+     * $normalizeNullsToEmptyString makes NULL and an empty string one key, for callers that go on to
+     * join by COALESCE(pk, '') and would otherwise let two source rows reach the same target row.
+     *
+     * @param string[] $primaryKeys
+     */
+    private function getDedupQualifyClause(
+        array $primaryKeys,
+        bool $normalizeNullsToEmptyString = false,
+    ): string {
+        if ($primaryKeys === []) {
+            return '';
+        }
+
+        // the source alias is quoted in the FROM clause, so the references must be quoted too -
+        // an unquoted `src` would be resolved as SRC and would not match the quoted alias
+        $sourceAlias = SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS);
+        $pkSql = implode(', ', array_map(
+            static function (string $columnName) use ($sourceAlias, $normalizeNullsToEmptyString): string {
+                $reference = $sourceAlias . '.' . SnowflakeQuote::quoteSingleIdentifier($columnName);
+                return $normalizeNullsToEmptyString
+                    ? sprintf('COALESCE(%s, \'\')', $reference)
+                    : $reference;
+            },
+            $primaryKeys,
+        ));
+
+        return sprintf(
+            ' QUALIFY ROW_NUMBER() OVER (PARTITION BY %s ORDER BY %s) = 1',
+            $pkSql,
+            $pkSql,
+        );
+    }
+
+    private function getTableReference(SnowflakeTableDefinition $tableDefinition): string
+    {
+        return sprintf(
+            '%s.%s',
+            SnowflakeQuote::quoteSingleIdentifier($tableDefinition->getSchemaName()),
+            SnowflakeQuote::quoteSingleIdentifier($tableDefinition->getTableName()),
+        );
+    }
+
+    /**
+     * Builds the destination column list and the matching value expressions for an insert.
+     *
+     * Shared by the INSERT ... SELECT builders and by the WHEN NOT MATCHED branch of getMergeCommand().
+     * A MERGE VALUES list accepts no column aliases, and an unqualified column name there is ambiguous
+     * because the target exposes the same names, so $forMergeValues drops the `AS <column>` suffix and
+     * qualifies every column reference with the source alias.
+     *
+     * @return array{0: string[], 1: string[]}
+     */
+    private function getInsertColumnsAndValues(
+        SnowflakeTableDefinition $sourceTableDefinition,
+        SnowflakeTableDefinition $destinationTableDefinition,
+        SnowflakeImportOptions $importOptions,
+        string $timestamp,
+        bool $forMergeValues,
+    ): array {
         $columnMap = SourceDestinationColumnMap::createForTables(
             $sourceTableDefinition,
             $destinationTableDefinition,
             $importOptions->ignoreColumns(),
             SourceDestinationColumnMap::MODE_MAP_BY_NAME,
         );
-        $destinationTable = sprintf(
-            '%s.%s',
-            SnowflakeQuote::quoteSingleIdentifier($destinationTableDefinition->getSchemaName()),
-            SnowflakeQuote::quoteSingleIdentifier($destinationTableDefinition->getTableName()),
-        );
+
+        $sourcePrefix = $forMergeValues
+            ? SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS) . '.'
+            : '';
+        $ref = static fn(string $columnName): string
+            => $sourcePrefix . SnowflakeQuote::quoteSingleIdentifier($columnName);
+        $as = static fn(string $columnName): string => $forMergeValues
+            ? ''
+            : ' AS ' . SnowflakeQuote::quoteSingleIdentifier($columnName);
 
         $insColumns = [];
         $columnsSetSql = [];
@@ -207,40 +400,40 @@ class SqlBuilder
                     if ($type === Snowflake::TYPE_OBJECT) {
                         // object can't be casted from string but can be casted from variant
                         $columnsSetSql[] = sprintf(
-                            'CAST(TO_VARIANT(%s) AS %s) AS %s',
-                            SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
+                            'CAST(TO_VARIANT(%s) AS %s)%s',
+                            $ref($sourceColumn->getColumnName()),
                             $destinationColumn->getColumnDefinition()->getSQLDefinition(),
-                            SnowflakeQuote::quoteSingleIdentifier($destinationColumn->getColumnName()),
+                            $as($destinationColumn->getColumnName()),
                         );
                         continue;
                     }
                     if ($type === Snowflake::TYPE_ARRAY) {
                         $columnsSetSql[] = sprintf(
-                            'CAST(PARSE_JSON(%s) AS %s) AS %s',
-                            SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
+                            'CAST(PARSE_JSON(%s) AS %s)%s',
+                            $ref($sourceColumn->getColumnName()),
                             $destinationColumn->getColumnDefinition()->getSQLDefinition(),
-                            SnowflakeQuote::quoteSingleIdentifier($destinationColumn->getColumnName()),
+                            $as($destinationColumn->getColumnName()),
                         );
                         continue;
                     }
                     if ($type === Snowflake::TYPE_VECTOR) {
                         $columnsSetSql[] = sprintf(
-                            'CAST(PARSE_JSON(%s) AS ARRAY)::%s AS %s',
-                            SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
+                            'CAST(PARSE_JSON(%s) AS ARRAY)::%s%s',
+                            $ref($sourceColumn->getColumnName()),
                             $destinationColumn->getColumnDefinition()->getSQLDefinition(),
-                            SnowflakeQuote::quoteSingleIdentifier($destinationColumn->getColumnName()),
+                            $as($destinationColumn->getColumnName()),
                         );
                         continue;
                     }
                     $columnsSetSql[] = sprintf(
-                        'CAST(%s AS %s) AS %s',
-                        SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
+                        'CAST(%s AS %s)%s',
+                        $ref($sourceColumn->getColumnName()),
                         $destinationColumn->getColumnDefinition()->getSQLDefinition(),
-                        SnowflakeQuote::quoteSingleIdentifier($destinationColumn->getColumnName()),
+                        $as($destinationColumn->getColumnName()),
                     );
                     continue;
                 }
-                $columnsSetSql[] = SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName());
+                $columnsSetSql[] = $ref($sourceColumn->getColumnName());
                 continue;
             }
 
@@ -251,13 +444,13 @@ class SqlBuilder
                 if ($sourceColumn->getColumnDefinition()->getBasetype() === BaseType::STRING) {
                     $columnsSetSql[] = sprintf(
                         'IFF(%s = \'\', NULL, %s)',
-                        SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
-                        SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
+                        $ref($sourceColumn->getColumnName()),
+                        $ref($sourceColumn->getColumnName()),
                     );
                     continue;
                 }
                 // if tables is not typed column could be other than string in this case we skip conversion
-                $columnsSetSql[] = SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName());
+                $columnsSetSql[] = $ref($sourceColumn->getColumnName());
                 continue;
             }
 
@@ -265,15 +458,15 @@ class SqlBuilder
             //phpcs:ignore
             if (!$importOptions->usingUserDefinedTypes() && $sourceColumn->getColumnDefinition()->getBasetype() === BaseType::STRING) {
                 $columnsSetSql[] = sprintf(
-                    'COALESCE(%s, \'\') AS %s',
-                    SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
-                    SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
+                    'COALESCE(%s, \'\')%s',
+                    $ref($sourceColumn->getColumnName()),
+                    $as($sourceColumn->getColumnName()),
                 );
                 continue;
             }
             // on columns other than string dont use COALESCE
             // this will fail if the column is not null, but this is expected
-            $columnsSetSql[] = SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName());
+            $columnsSetSql[] = $ref($sourceColumn->getColumnName());
         }
 
         $useTimestamp = !in_array(ToStageImporterInterface::TIMESTAMP_COLUMN_NAME, $insColumns, true)
@@ -284,15 +477,7 @@ class SqlBuilder
             $columnsSetSql[] = SnowflakeQuote::quote($timestamp);
         }
 
-        return sprintf(
-            'INSERT INTO %s (%s) (SELECT %s FROM %s.%s AS %s)',
-            $destinationTable,
-            $this->getColumnsString($insColumns),
-            implode(',', $columnsSetSql),
-            SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
-            SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
-            SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS),
-        );
+        return [$insColumns, $columnsSetSql];
     }
 
     public function getTruncateTable(
@@ -383,6 +568,54 @@ class SqlBuilder
         SnowflakeImportOptions $importOptions,
         string $timestamp,
     ): string {
+        $columnsSet = $this->getColumnsSetForUpdate(
+            $stagingTableDefinition,
+            $destinationDefinition,
+            $importOptions,
+            $timestamp,
+        );
+        $columnsComparisonSql = $this->getColumnsComparisonSql(
+            $stagingTableDefinition,
+            $destinationDefinition,
+            $importOptions,
+        );
+
+        $dest = $this->getTableReference($destinationDefinition);
+
+        if ($columnsComparisonSql === []) {
+            return sprintf(
+                'UPDATE %s AS "dest" SET %s FROM %s.%s AS "src" WHERE %s',
+                $dest,
+                implode(', ', $columnsSet),
+                QuoteHelper::quoteIdentifier($stagingTableDefinition->getSchemaName()),
+                QuoteHelper::quoteIdentifier($stagingTableDefinition->getTableName()),
+                $this->getPrimayKeyWhereConditions($destinationDefinition->getPrimaryKeysNames(), $importOptions),
+            );
+        }
+
+        return sprintf(
+            'UPDATE %s AS "dest" SET %s FROM %s.%s AS "src" WHERE %s AND (%s)',
+            $dest,
+            implode(', ', $columnsSet),
+            QuoteHelper::quoteIdentifier($stagingTableDefinition->getSchemaName()),
+            QuoteHelper::quoteIdentifier($stagingTableDefinition->getTableName()),
+            $this->getPrimayKeyWhereConditions($destinationDefinition->getPrimaryKeysNames(), $importOptions),
+            implode(' OR ', $columnsComparisonSql),
+        );
+    }
+
+    /**
+     * Builds the `SET` assignments of an update. The expressions reference the source through the
+     * "src" alias, so they fit both the UPDATE ... FROM form and the WHEN MATCHED branch of a MERGE.
+     *
+     * @return string[]
+     */
+    private function getColumnsSetForUpdate(
+        SnowflakeTableDefinition $stagingTableDefinition,
+        SnowflakeTableDefinition $destinationDefinition,
+        SnowflakeImportOptions $importOptions,
+        string $timestamp,
+    ): array {
         $columnMap = SourceDestinationColumnMap::createForTables(
             $stagingTableDefinition,
             $destinationDefinition,
@@ -466,10 +699,24 @@ class SqlBuilder
             );
         }
 
-        $columnsComparisonSql = [];
+        return $columnsSet;
+    }
+
+    /**
+     * Builds the per-column "did this row actually change" predicates, OR-ed together by the caller to
+     * skip rewriting rows whose values are identical. Both sides are referenced through the "dest" and
+     * "src" aliases, so the result fits an UPDATE ... FROM as well as a MERGE ... WHEN MATCHED AND.
+     *
+     * @return string[]
+     */
+    private function getColumnsComparisonSql(
+        SnowflakeTableDefinition $stagingTableDefinition,
+        SnowflakeTableDefinition $destinationDefinition,
+        SnowflakeImportOptions $importOptions,
+    ): array {
         if ($importOptions->isNullManipulationEnabled()) {
             // update only changed rows - mysql TIMESTAMP ON UPDATE behaviour simulation
-            $columnsComparisonSql = array_map(
+            return array_map(
                 static function ($columnName) {
                     return sprintf(
                         'COALESCE(TO_VARCHAR("dest".%s), \'\') != COALESCE("src".%s, \'\')',
@@ -479,58 +726,40 @@ class SqlBuilder
                 },
                 $stagingTableDefinition->getColumnsNames(),
             );
-        } else {
-            foreach ($stagingTableDefinition->getColumnsDefinitions() as $sourceColumn) {
-                $destinationColumn = $columnMap->getDestination($sourceColumn);
-                if (in_array(
-                    $destinationColumn->getColumnDefinition()->getType(),
-                    [
-                    Snowflake::TYPE_GEOGRAPHY,
-                    Snowflake::TYPE_GEOMETRY,
-                    ],
-                    true,
-                )
-                ) {
-                    $columnsComparisonSql[] = sprintf(
-                        'ST_ASEWKT("dest".%s) IS DISTINCT FROM ST_ASEWKT("src".%s)',
-                        SnowflakeQuote::quoteSingleIdentifier($destinationColumn->getColumnName()),
-                        SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
-                    );
-                } else {
-                    $columnsComparisonSql[] = sprintf(
-                        '"dest".%s IS DISTINCT FROM "src".%s',
-                        SnowflakeQuote::quoteSingleIdentifier($destinationColumn->getColumnName()),
-                        SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
-                    );
-                }
+        }
+
+        $columnMap = SourceDestinationColumnMap::createForTables(
+            $stagingTableDefinition,
+            $destinationDefinition,
+            $importOptions->ignoreColumns(),
+            SourceDestinationColumnMap::MODE_MAP_BY_NAME,
+        );
+        $columnsComparisonSql = [];
+        foreach ($stagingTableDefinition->getColumnsDefinitions() as $sourceColumn) {
+            $destinationColumn = $columnMap->getDestination($sourceColumn);
+            if (in_array(
+                $destinationColumn->getColumnDefinition()->getType(),
+                [
+                Snowflake::TYPE_GEOGRAPHY,
+                Snowflake::TYPE_GEOMETRY,
+                ],
+                true,
+            )
+            ) {
+                $columnsComparisonSql[] = sprintf(
+                    'ST_ASEWKT("dest".%s) IS DISTINCT FROM ST_ASEWKT("src".%s)',
+                    SnowflakeQuote::quoteSingleIdentifier($destinationColumn->getColumnName()),
+                    SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
+                );
+            } else {
+                $columnsComparisonSql[] = sprintf(
+                    '"dest".%s IS DISTINCT FROM "src".%s',
+                    SnowflakeQuote::quoteSingleIdentifier($destinationColumn->getColumnName()),
+                    SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
+                );
             }
         }
 
-        $dest = sprintf(
-            '%s.%s',
-            SnowflakeQuote::quoteSingleIdentifier($destinationDefinition->getSchemaName()),
-            SnowflakeQuote::quoteSingleIdentifier($destinationDefinition->getTableName()),
-        );
-
-        if ($columnsComparisonSql === []) {
-            return sprintf(
-                'UPDATE %s AS "dest" SET %s FROM %s.%s AS "src" WHERE %s',
-                $dest,
-                implode(', ', $columnsSet),
-                QuoteHelper::quoteIdentifier($stagingTableDefinition->getSchemaName()),
-                QuoteHelper::quoteIdentifier($stagingTableDefinition->getTableName()),
-                $this->getPrimayKeyWhereConditions($destinationDefinition->getPrimaryKeysNames(), $importOptions),
-            );
-        }
-
-        return sprintf(
-            'UPDATE %s AS "dest" SET %s FROM %s.%s AS "src" WHERE %s AND (%s)',
-            $dest,
-            implode(', ', $columnsSet),
-            QuoteHelper::quoteIdentifier($stagingTableDefinition->getSchemaName()),
-            QuoteHelper::quoteIdentifier($stagingTableDefinition->getTableName()),
-            $this->getPrimayKeyWhereConditions($destinationDefinition->getPrimaryKeysNames(), $importOptions),
-            implode(' OR ', $columnsComparisonSql),
-        );
+        return $columnsComparisonSql;
     }
 }

@@ -454,9 +454,13 @@ class SnowflakeBaseTestCase extends ImportExportBaseTest
         );
     }
 
+    /**
+     * @param string[] $features
+     */
     protected static function getSnowflakeImportOptions(
         int $skipLines = 1,
         bool $useTimeStamp = true,
+        array $features = [],
     ): SnowflakeImportOptions {
         return new SnowflakeImportOptions(
             convertEmptyValuesToNull: [],
@@ -464,6 +468,7 @@ class SnowflakeBaseTestCase extends ImportExportBaseTest
             useTimestamp: $useTimeStamp,
             numberOfIgnoredLines: $skipLines,
             ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
+            features: $features,
         );
     }
 

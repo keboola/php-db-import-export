@@ -124,6 +124,13 @@ final class FullImporter implements ToFinalTableImporterInterface
                     $destinationTableDefinition,
                     $state,
                 );
+            } elseif ($options->useOptimizedImport()) {
+                $this->doFullLoadWithInsertOverwrite(
+                    $stagingTableDefinition,
+                    $destinationTableDefinition,
+                    $options,
+                    $state,
+                );
             } elseif (!empty($destinationTableDefinition->getPrimaryKeysNames())) {
                 $this->doFullLoadWithDedup(
                     $stagingTableDefinition,
@@ -146,6 +153,35 @@ final class FullImporter implements ToFinalTableImporterInterface
         $state->setImportedColumns($stagingTableDefinition->getColumnsNames());
 
         return $state->getResult();
+    }
+
+    /**
+     * Replaces the destination content with a single INSERT OVERWRITE. Snowflake truncates the target
+     * as part of the statement, so there is no explicit transaction to keep open and no window in
+     * which the destination is truncated but not yet refilled. With primary keys the duplicates are
+     * collapsed inline, which also removes the intermediate dedup table and the second full write of
+     * the data it required.
+     */
+    private function doFullLoadWithInsertOverwrite(
+        SnowflakeTableDefinition $stagingTableDefinition,
+        SnowflakeTableDefinition $destinationTableDefinition,
+        SnowflakeImportOptions $options,
+        ImportState $state,
+    ): void {
+        $primaryKeys = $destinationTableDefinition->getPrimaryKeysNames();
+        $timer = $primaryKeys === [] ? self::TIMER_COPY_TO_TARGET : self::TIMER_DEDUP;
+
+        $state->startTimer($timer);
+        $this->connection->executeStatement(
+            $this->sqlBuilder->getInsertOverwriteAllIntoTargetTableCommand(
+                $stagingTableDefinition,
+                $destinationTableDefinition,
+                $options,
+                DateTimeHelper::getNowFormatted(),
+                $primaryKeys,
+            ),
+        );
+        $state->stopTimer($timer);
     }
 
     private function doFullLoadWithDedup(

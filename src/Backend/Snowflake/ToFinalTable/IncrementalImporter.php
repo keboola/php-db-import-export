@@ -27,6 +27,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
     private const TIMER_DELETE_UPDATED_ROWS = 'deleteUpdatedRowsFromStaging';
     private const TIMER_DEDUP_STAGING = 'dedupStaging';
     private const TIMER_INSERT_INTO_TARGET = 'insertIntoTargetFromStaging';
+    private const TIMER_MERGE_INTO_TARGET = 'mergeIntoTargetFromStaging';
 
     private Connection $connection;
 
@@ -67,6 +68,19 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         assert($stagingTableDefinition instanceof SnowflakeTableDefinition);
         assert($destinationTableDefinition instanceof SnowflakeTableDefinition);
         assert($options instanceof SnowflakeImportOptions);
+
+        /** @var SnowflakeTableDefinition $destinationTableDefinition */
+        if ($options->useOptimizedImport()
+            && !empty($destinationTableDefinition->getPrimaryKeysNames())
+            && !$this->forceUseCtas
+        ) {
+            return $this->importWithMerge(
+                $stagingTableDefinition,
+                $destinationTableDefinition,
+                $options,
+                $state,
+            );
+        }
 
         // table used in getInsertAllIntoTargetTableCommand if PK's are specified, dedup table is used
         $tableToCopyFrom = $stagingTableDefinition;
@@ -188,5 +202,75 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         }
 
         return $state->getResult();
+    }
+
+    /**
+     * Applies the whole import with one MERGE. Being a single statement it is atomic on its own, so no
+     * explicit transaction is needed — which also means no DDL can silently commit half of the import,
+     * as creating a dedup table inside a transaction does. Collapsing the duplicates inline additionally
+     * removes the dedup table, the second scan of staging done by the DELETE, and the extra write of
+     * the data.
+     */
+    private function importWithMerge(
+        SnowflakeTableDefinition $stagingTableDefinition,
+        SnowflakeTableDefinition $destinationTableDefinition,
+        SnowflakeImportOptions $options,
+        ImportState $state,
+    ): Result {
+        try {
+            // Count unique rows in staging (by PK) before any modifications.
+            // This is the number of rows actually being imported (updates + inserts).
+            $state->setImportedRowsCount(
+                $this->countUniqueRowsInStaging(
+                    $stagingTableDefinition,
+                    $destinationTableDefinition->getPrimaryKeysNames(),
+                ),
+            );
+
+            $state->startTimer(self::TIMER_MERGE_INTO_TARGET);
+            $this->connection->executeStatement(
+                $this->sqlBuilder->getMergeCommand(
+                    $stagingTableDefinition,
+                    $destinationTableDefinition,
+                    $options,
+                    $this->timestamp,
+                ),
+            );
+            $state->stopTimer(self::TIMER_MERGE_INTO_TARGET);
+
+            $state->setImportedColumns($stagingTableDefinition->getColumnsNames());
+        } catch (Exception $e) {
+            throw SnowflakeException::covertException($e);
+        }
+
+        return $state->getResult();
+    }
+
+    /**
+     * @param string[] $primaryKeys
+     */
+    private function countUniqueRowsInStaging(
+        SnowflakeTableDefinition $stagingTableDefinition,
+        array $primaryKeys,
+    ): int {
+        $pkSql = implode(', ', array_map(
+            static fn(string $col) => SnowflakeQuote::quoteSingleIdentifier($col),
+            $primaryKeys,
+        ));
+        $stagingRef = sprintf(
+            '%s.%s',
+            SnowflakeQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
+            SnowflakeQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
+        );
+
+        /** @var string $uniqueCount */
+        $uniqueCount = $this->connection->fetchOne(sprintf(
+            'SELECT COUNT(*) FROM (SELECT %s FROM %s GROUP BY %s)',
+            $pkSql,
+            $stagingRef,
+            $pkSql,
+        ));
+
+        return (int) $uniqueCount;
     }
 }
