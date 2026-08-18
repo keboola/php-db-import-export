@@ -88,4 +88,44 @@ class FromTableInsertIntoAdapterTest extends BaseTestCase
 
         self::assertEquals(10, $count);
     }
+
+    public function testUnreportedAffectedRowsAreCountedOnTheStagingTable(): void
+    {
+        $source = new Storage\Snowflake\SelectSource(
+            'SELECT * FROM "test_schema"."test_table"',
+            [],
+            ['col1', 'col2'],
+            [],
+        );
+
+        $conn = $this->mockConnection();
+        // odbc_num_rows() reports -1 when the driver cannot tell how many rows the INSERT affected.
+        $conn->expects(self::once())->method('executeStatement')->willReturn(-1);
+        $conn->expects(self::once())
+            ->method('fetchAllAssociative')
+            ->with('SHOW TABLES LIKE \'stagingTable\' IN SCHEMA "test_schema"')
+            ->willReturn([
+                ['name' => 'stagingTable', 'kind' => 'TEMPORARY', 'rows' => '7', 'bytes' => '128'],
+            ]);
+
+        $destination = new SnowflakeTableDefinition(
+            'test_schema',
+            'stagingTable',
+            true,
+            new ColumnCollection([
+                SnowflakeColumn::createGenericColumn('col1'),
+                SnowflakeColumn::createGenericColumn('col2'),
+            ]),
+            [],
+        );
+        $adapter = new FromTableInsertIntoAdapter($conn);
+
+        $count = $adapter->runCopyCommand(
+            $source,
+            $destination,
+            new SnowflakeImportOptions([]),
+        );
+
+        self::assertSame(7, $count);
+    }
 }

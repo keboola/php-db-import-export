@@ -98,18 +98,29 @@ class FromTableInsertIntoAdapter implements CopyAdapterInterface
         }
 
         if ($source instanceof SelectSource) {
-            $insertedRows = $this->connection->executeStatement(
+            $insertedRows = (int) $this->connection->executeStatement(
                 $sql,
                 $source->getQueryBindings(),
                 $source->getDataTypes(),
             );
         } else {
-            $insertedRows = $this->connection->executeStatement($sql);
+            $insertedRows = (int) $this->connection->executeStatement($sql);
         }
 
         // The staging table is created empty for this load, so the rows the INSERT affected are the
         // entire content of the table. The driver is ODBC-backed: the count comes from
         // odbc_num_rows(), while an INSERT exposes no result set rows to read.
-        return (int) $insertedRows;
+        if ($insertedRows < 0) {
+            // odbc_num_rows() answers -1 when the driver declines to report affected rows. The
+            // count reaches the job result and the import event, so it is read off the staging
+            // table instead of being passed on negative.
+            return (new SnowflakeTableReflection(
+                $this->connection,
+                $destination->getSchemaName(),
+                $destination->getTableName(),
+            ))->getRowsCount();
+        }
+
+        return $insertedRows;
     }
 }
