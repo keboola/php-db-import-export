@@ -203,6 +203,43 @@ class SqlBuilderTest extends TestCase
     }
 
     /**
+     * The reported row count has to be grouped by the same key the deduplication collapses by,
+     * otherwise a NULL/'' collision in a primary key is counted twice but applied once.
+     */
+    public function testGetUniquePrimaryKeyCountCommandMatchesDedupKey(): void
+    {
+        $builder = $this->getBuilder();
+        $stage = $this->genericStage();
+
+        $withNullManipulation = $builder->getUniquePrimaryKeyCountCommand(
+            $stage,
+            new SnowflakeImportOptions(),
+            ['col1'],
+        );
+        self::assertSame(
+            'SELECT COUNT(*) FROM (SELECT COALESCE("src"."col1", \'\')'
+            . ' FROM "import_export_test_schema"."__temp_stagingTable" AS "src"'
+            . ' GROUP BY COALESCE("src"."col1", \'\'))',
+            $withNullManipulation,
+        );
+
+        $withoutNullManipulation = $builder->getUniquePrimaryKeyCountCommand(
+            $stage,
+            new SnowflakeImportOptions(
+                requireSameTables: SnowflakeImportOptions::SAME_TABLES_REQUIRED,
+                nullManipulation: SnowflakeImportOptions::NULL_MANIPULATION_SKIP,
+            ),
+            ['col1'],
+        );
+        self::assertSame(
+            'SELECT COUNT(*) FROM (SELECT "src"."col1"'
+            . ' FROM "import_export_test_schema"."__temp_stagingTable" AS "src"'
+            . ' GROUP BY "src"."col1")',
+            $withoutNullManipulation,
+        );
+    }
+
+    /**
      * A non-typed table keeps the null manipulation: primary keys join through COALESCE, values are
      * coalesced to empty strings and the change detection compares as text.
      */

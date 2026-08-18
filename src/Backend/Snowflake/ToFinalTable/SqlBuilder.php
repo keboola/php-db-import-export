@@ -319,10 +319,55 @@ class SqlBuilder
             return '';
         }
 
+        $pkSql = $this->getDedupKeyExpressions($primaryKeys, $normalizeNullsToEmptyString);
+
+        return sprintf(
+            ' QUALIFY ROW_NUMBER() OVER (PARTITION BY %s ORDER BY %s) = 1',
+            $pkSql,
+            $pkSql,
+        );
+    }
+
+    /**
+     * Counts the rows an import will apply, i.e. the distinct primary keys in staging after the same
+     * collapsing the deduplication does. Sharing the key expressions with getDedupQualifyClause() is
+     * what keeps the reported number equal to the number of rows actually written - grouping by the raw
+     * column while the deduplication groups by COALESCE(pk, '') overcounts by every NULL/'' collision.
+     *
+     * @param string[] $primaryKeys
+     */
+    public function getUniquePrimaryKeyCountCommand(
+        SnowflakeTableDefinition $stagingTableDefinition,
+        SnowflakeImportOptions $importOptions,
+        array $primaryKeys,
+    ): string {
+        $pkSql = $this->getDedupKeyExpressions(
+            $primaryKeys,
+            $importOptions->isNullManipulationEnabled(),
+        );
+
+        return sprintf(
+            'SELECT COUNT(*) FROM (SELECT %s FROM %s.%s AS %s GROUP BY %s)',
+            $pkSql,
+            SnowflakeQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
+            SnowflakeQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
+            SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            $pkSql,
+        );
+    }
+
+    /**
+     * @param string[] $primaryKeys
+     */
+    private function getDedupKeyExpressions(
+        array $primaryKeys,
+        bool $normalizeNullsToEmptyString,
+    ): string {
         // the source alias is quoted in the FROM clause, so the references must be quoted too -
         // an unquoted `src` would be resolved as SRC and would not match the quoted alias
         $sourceAlias = SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS);
-        $pkSql = implode(', ', array_map(
+
+        return implode(', ', array_map(
             static function (string $columnName) use ($sourceAlias, $normalizeNullsToEmptyString): string {
                 $reference = $sourceAlias . '.' . SnowflakeQuote::quoteSingleIdentifier($columnName);
                 return $normalizeNullsToEmptyString
@@ -331,12 +376,6 @@ class SqlBuilder
             },
             $primaryKeys,
         ));
-
-        return sprintf(
-            ' QUALIFY ROW_NUMBER() OVER (PARTITION BY %s ORDER BY %s) = 1',
-            $pkSql,
-            $pkSql,
-        );
     }
 
     private function getTableReference(SnowflakeTableDefinition $tableDefinition): string

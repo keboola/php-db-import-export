@@ -224,6 +224,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                 $this->countUniqueRowsInStaging(
                     $stagingTableDefinition,
                     $destinationTableDefinition->getPrimaryKeysNames(),
+                    $options,
                 ),
             );
 
@@ -252,24 +253,16 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
     private function countUniqueRowsInStaging(
         SnowflakeTableDefinition $stagingTableDefinition,
         array $primaryKeys,
+        SnowflakeImportOptions $options,
     ): int {
-        $pkSql = implode(', ', array_map(
-            static fn(string $col) => SnowflakeQuote::quoteSingleIdentifier($col),
-            $primaryKeys,
-        ));
-        $stagingRef = sprintf(
-            '%s.%s',
-            SnowflakeQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
-            SnowflakeQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
-        );
-
         /** @var string $uniqueCount */
-        $uniqueCount = $this->connection->fetchOne(sprintf(
-            'SELECT COUNT(*) FROM (SELECT %s FROM %s GROUP BY %s)',
-            $pkSql,
-            $stagingRef,
-            $pkSql,
-        ));
+        $uniqueCount = $this->connection->fetchOne(
+            $this->sqlBuilder->getUniquePrimaryKeyCountCommand(
+                $stagingTableDefinition,
+                $options,
+                $primaryKeys,
+            ),
+        );
 
         return (int) $uniqueCount;
     }

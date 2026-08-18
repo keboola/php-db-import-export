@@ -356,6 +356,74 @@ SELECT 2,
     }
 
     /**
+     * A non-typed table joins and deduplicates by COALESCE(pk, ''), so a NULL and an empty string in a
+     * primary key are one row. The reported count has to agree with that - a count grouped by the raw
+     * column would claim two imported rows while one is written.
+     *
+     * A file source cannot produce this: COPY runs with NULL_IF=() so an empty field arrives as ''. It
+     * takes a table source or importAsNull to get a real NULL into a primary key, hence the direct
+     * insert into the staging table.
+     */
+    public function testIncrementalImportCountMatchesNullAndEmptyStringPrimaryKeyCollapse(): void
+    {
+        $this->initTable(self::TABLE_SINGLE_PK);
+
+        $options = new SnowflakeImportOptions(
+            convertEmptyValuesToNull: [],
+            isIncremental: true,
+            useTimestamp: false,
+            numberOfIgnoredLines: 0,
+            ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
+        );
+
+        $destination = (new SnowflakeTableReflection(
+            $this->connection,
+            $this->getDestinationSchemaName(),
+            self::TABLE_SINGLE_PK,
+        ))->getTableDefinition();
+        assert($destination instanceof SnowflakeTableDefinition);
+
+        $stagingTable = StageTableDefinitionFactory::createStagingTableDefinition(
+            $destination,
+            ['VisitID', 'Value', 'MenuItem', 'Something', 'Other'],
+        );
+        $this->connection->executeStatement(
+            (new SnowflakeTableQueryBuilder())->getCreateTableCommandFromDefinition($stagingTable),
+        );
+
+        try {
+            $this->connection->executeStatement(sprintf(
+                'INSERT INTO %s.%s VALUES (NULL, \'a\', \'b\', \'c\', \'d\'), (\'\', \'e\', \'f\', \'g\', \'h\')',
+                SnowflakeQuote::quoteSingleIdentifier($stagingTable->getSchemaName()),
+                SnowflakeQuote::quoteSingleIdentifier($stagingTable->getTableName()),
+            ));
+
+            $result = (new IncrementalImporter($this->connection))->importToTable(
+                $stagingTable,
+                $destination,
+                $options,
+                new ImportState($stagingTable->getTableName()),
+            );
+        } finally {
+            $this->connection->executeStatement(
+                (new SqlBuilder())->getDropTableIfExistsCommand(
+                    $stagingTable->getSchemaName(),
+                    $stagingTable->getTableName(),
+                ),
+            );
+        }
+
+        $destinationRowCount = (new SnowflakeTableReflection(
+            $this->connection,
+            $this->getDestinationSchemaName(),
+            self::TABLE_SINGLE_PK,
+        ))->getRowsCount();
+
+        self::assertSame(1, $destinationRowCount);
+        self::assertEquals($destinationRowCount, $result->getImportedRowsCount());
+    }
+
+    /**
      * Same scenario as the 'simple' case of testIncrementalImport(), but with the
      * snowflake-legacy-import feature, which runs the load as a dedup table plus UPDATE/DELETE/INSERT
      * instead of a single MERGE. Both paths must end up with the same rows and the same reported count.
