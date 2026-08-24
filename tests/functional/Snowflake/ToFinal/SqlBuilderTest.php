@@ -503,6 +503,67 @@ EOT,);
         );
     }
 
+    public function testGetInsertAllIntoTargetTableCommandWithDedup(): void
+    {
+        $this->createTestSchema();
+        $destination = $this->createTestTableWithColumns();
+        $this->createStagingTableWithData();
+
+        // create fake stage and say that there is less columns
+        $fakeStage = new SnowflakeTableDefinition(
+            self::getTestSchema(),
+            self::TEST_STAGING_TABLE,
+            true,
+            new ColumnCollection([
+                $this->createNullableGenericColumn('col1'),
+                $this->createNullableGenericColumn('col2'),
+                ],),
+            [],
+        );
+
+        $sql = $this->getBuilder()->getInsertAllIntoTargetTableCommand(
+            $fakeStage,
+            $destination,
+            new SnowflakeImportOptions(
+                ignoreColumns: ['id'],
+            ),
+            '2020-01-01 00:00:00',
+            ['col1'],
+        );
+
+        self::assertSqlEquals(
+        // phpcs:ignore
+            'INSERT INTO "import_export_test_schema"."import_export_test_test" ("col1", "col2") (SELECT COALESCE("col1", \'\') AS "col1",COALESCE("col2", \'\') AS "col2" FROM "import_export_test_schema"."__temp_stagingTable" AS "src" QUALIFY ROW_NUMBER() OVER (PARTITION BY "src"."col1" ORDER BY "src"."col1") = 1)',
+            $sql,
+        );
+
+        $out = $this->connection->executeStatement($sql);
+        self::assertSqlEquals(2, $out);
+
+        $result = $this->connection->fetchAllAssociative(
+            sprintf(
+                'SELECT * FROM %s ORDER BY "col1"',
+                self::getTestTableInSchema(),
+            ),
+        );
+
+        self::assertSqlEquals(
+            [
+            [
+                'id' => null,
+                'col1' => '1',
+                'col2' => '1',
+            ],
+            [
+                'id' => null,
+                'col1' => '2',
+                'col2' => '2',
+            ],
+            ],
+            $result,
+        );
+    }
+
     public function testGetInsertAllIntoTargetTableCommandCasting(): void
     {
         $this->createTestSchema();

@@ -12,14 +12,12 @@ use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\DateTimeHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeException;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
-use Keboola\Db\ImportExport\Backend\Snowflake\ToStage\StageTableDefinitionFactory;
 use Keboola\Db\ImportExport\Backend\ToFinalTableImporterInterface;
 use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
 use Keboola\Db\ImportExport\Exception\ColumnsMismatchException;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
 use Keboola\TableBackendUtils\Column\Snowflake\SnowflakeColumn;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableDefinition;
-use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableQueryBuilder;
 use Keboola\TableBackendUtils\Table\TableDefinitionInterface;
 
 final class FullImporter implements ToFinalTableImporterInterface
@@ -156,57 +154,28 @@ final class FullImporter implements ToFinalTableImporterInterface
     ): void {
         $state->startTimer(self::TIMER_DEDUP);
 
-        // 1. Create table for deduplication
-        $deduplicationTableDefinition = StageTableDefinitionFactory::createDedupTableDefinition(
-            $stagingTableDefinition,
-            $destinationTableDefinition->getPrimaryKeysNames(),
+        $this->connection->executeStatement(
+            $this->sqlBuilder->getBeginTransaction(),
         );
 
-        try {
-            $qb = new SnowflakeTableQueryBuilder();
-            $sql = $qb->getCreateTableCommandFromDefinition($deduplicationTableDefinition);
-            $this->connection->executeStatement($sql);
+        $this->connection->executeStatement(
+            $this->sqlBuilder->getTruncateTable(
+                $destinationTableDefinition->getSchemaName(),
+                $destinationTableDefinition->getTableName(),
+            ),
+        );
 
-            // 2 transfer data from source to dedup table with dedup process
-            $this->connection->executeStatement(
-                $this->sqlBuilder->getDedupCommand(
-                    $stagingTableDefinition,
-                    $deduplicationTableDefinition,
-                    $destinationTableDefinition->getPrimaryKeysNames(),
-                ),
-            );
-
-            $this->connection->executeStatement(
-                $this->sqlBuilder->getBeginTransaction(),
-            );
-
-            // 3 truncate destination table
-            $this->connection->executeStatement(
-                $this->sqlBuilder->getTruncateTable(
-                    $destinationTableDefinition->getSchemaName(),
-                    $destinationTableDefinition->getTableName(),
-                ),
-            );
-
-            // 4 move data with INSERT INTO
-            $this->connection->executeStatement(
-                $this->sqlBuilder->getInsertAllIntoTargetTableCommand(
-                    $deduplicationTableDefinition,
-                    $destinationTableDefinition,
-                    $options,
-                    DateTimeHelper::getNowFormatted(),
-                ),
-            );
-            $state->stopTimer(self::TIMER_DEDUP);
-        } finally {
-            // 5 drop dedup table
-            $this->connection->executeStatement(
-                $this->sqlBuilder->getDropTableIfExistsCommand(
-                    $deduplicationTableDefinition->getSchemaName(),
-                    $deduplicationTableDefinition->getTableName(),
-                ),
-            );
-        }
+        // single INSERT with inline QUALIFY dedup; no intermediate dedup table
+        $this->connection->executeStatement(
+            $this->sqlBuilder->getInsertAllIntoTargetTableCommand(
+                $stagingTableDefinition,
+                $destinationTableDefinition,
+                $options,
+                DateTimeHelper::getNowFormatted(),
+                $destinationTableDefinition->getPrimaryKeysNames(),
+            ),
+        );
+        $state->stopTimer(self::TIMER_DEDUP);
 
         $this->connection->executeStatement(
             $this->sqlBuilder->getCommitTransaction(),

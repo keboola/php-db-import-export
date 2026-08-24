@@ -170,11 +170,16 @@ class SqlBuilder
         );
     }
 
+    /**
+     * @param string[] $dedupPrimaryKeys when set, source rows are deduplicated by these keys
+     *                                   (one arbitrary row per key, same semantics as getDedupCommand)
+     */
     public function getInsertAllIntoTargetTableCommand(
         SnowflakeTableDefinition $sourceTableDefinition,
         SnowflakeTableDefinition $destinationTableDefinition,
         SnowflakeImportOptions $importOptions,
         string $timestamp,
+        array $dedupPrimaryKeys = [],
     ): string {
         $columnMap = SourceDestinationColumnMap::createForTables(
             $sourceTableDefinition,
@@ -284,14 +289,31 @@ class SqlBuilder
             $columnsSetSql[] = SnowflakeQuote::quote($timestamp);
         }
 
+        $dedupSql = '';
+        if ($dedupPrimaryKeys !== []) {
+            // "src"-qualified keys keep NULL/'' partitioning on raw source values,
+            // matching getDedupCommand (aliases like COALESCE(...) must not shadow them)
+            $pkSql = $this->getColumnsString(
+                $dedupPrimaryKeys,
+                ',',
+                SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            );
+            $dedupSql = sprintf(
+                ' QUALIFY ROW_NUMBER() OVER (PARTITION BY %s ORDER BY %s) = 1',
+                $pkSql,
+                $pkSql,
+            );
+        }
+
         return sprintf(
-            'INSERT INTO %s (%s) (SELECT %s FROM %s.%s AS %s)',
+            'INSERT INTO %s (%s) (SELECT %s FROM %s.%s AS %s%s)',
             $destinationTable,
             $this->getColumnsString($insColumns),
             implode(',', $columnsSetSql),
             SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
             SnowflakeQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
             SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            $dedupSql,
         );
     }
 
