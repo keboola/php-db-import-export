@@ -356,9 +356,134 @@ SELECT 2,
     }
 
     /**
-     * A non-typed table joins and deduplicates by COALESCE(pk, ''), so a NULL and an empty string in a
-     * primary key are one row. The reported count has to agree with that - a count grouped by the raw
-     * column would claim two imported rows while one is written.
+     * Same scenarios as incrementalImportData(), but with the snowflake-optimized-import feature,
+     * which applies the whole load with a single MERGE instead of a dedup table plus
+     * UPDATE/DELETE/INSERT. Must produce identical final table contents.
+     *
+     * @return Generator<string, array<mixed>>
+     */
+    public static function incrementalImportDataOptimized(): Generator
+    {
+        $accountsStub = static::getParseCsvStub('expectation.tw_accounts.increment.csv');
+        $multiPKStub = static::getParseCsvStub('expectation.multi-pk_not-null.increment.csv');
+        $multiPKWithNullStub = static::getParseCsvStub('expectation.multi-pk.increment.csv');
+        $features = [SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT];
+
+        yield 'simple optimized' => [
+            static::getSourceInstance(
+                'tw_accounts.csv',
+                $accountsStub->getColumns(),
+                false,
+                false,
+                ['id'],
+            ),
+            static::getSnowflakeImportOptions(ImportOptions::SKIP_FIRST_LINE, true, $features),
+            static::getSourceInstance(
+                'tw_accounts.increment.csv',
+                $accountsStub->getColumns(),
+                false,
+                false,
+                ['id'],
+            ),
+            static::getSnowflakeIncrementalImportOptions(ImportOptions::SKIP_FIRST_LINE, $features),
+            [static::getDestinationSchemaName(), 'accounts_3'],
+            $accountsStub->getRows(),
+            3, // 4 rows in CSV but id=18 is duplicated, so 3 unique PKs
+            self::TABLE_ACCOUNTS_3,
+        ];
+        yield 'simple no timestamp optimized' => [
+            static::getSourceInstance(
+                'tw_accounts.csv',
+                $accountsStub->getColumns(),
+                false,
+                false,
+                ['id'],
+            ),
+            new SnowflakeImportOptions(
+                convertEmptyValuesToNull: [],
+                isIncremental: false,
+                useTimestamp: false, // disable timestamp
+                numberOfIgnoredLines: ImportOptions::SKIP_FIRST_LINE,
+                ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
+                features: $features,
+            ),
+            static::getSourceInstance(
+                'tw_accounts.increment.csv',
+                $accountsStub->getColumns(),
+                false,
+                false,
+                ['id'],
+            ),
+            new SnowflakeImportOptions(
+                convertEmptyValuesToNull: [],
+                isIncremental: true, // incremental
+                useTimestamp: false, // disable timestamp
+                numberOfIgnoredLines: ImportOptions::SKIP_FIRST_LINE,
+                ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
+                features: $features,
+            ),
+            [static::getDestinationSchemaName(), 'accounts_without_ts'],
+            $accountsStub->getRows(),
+            3, // 4 rows in CSV but id=18 is duplicated, so 3 unique PKs
+            self::TABLE_ACCOUNTS_WITHOUT_TS,
+        ];
+        yield 'multi pk optimized' => [
+            static::getSourceInstance(
+                'multi-pk_not-null.csv',
+                $multiPKStub->getColumns(),
+                false,
+                false,
+                ['VisitID', 'Value', 'MenuItem'],
+            ),
+            static::getSnowflakeImportOptions(ImportOptions::SKIP_FIRST_LINE, true, $features),
+            static::getSourceInstance(
+                'multi-pk_not-null.increment.csv',
+                $multiPKStub->getColumns(),
+                false,
+                false,
+                ['VisitID', 'Value', 'MenuItem'],
+            ),
+            static::getSnowflakeIncrementalImportOptions(ImportOptions::SKIP_FIRST_LINE, $features),
+            [static::getDestinationSchemaName(), 'multi_pk_ts'],
+            $multiPKStub->getRows(),
+            3,
+            self::TABLE_MULTI_PK_WITH_TS,
+        ];
+        yield 'multi pk with null optimized' => [
+            static::getSourceInstance(
+                'multi-pk.csv',
+                $multiPKWithNullStub->getColumns(),
+                false,
+                false,
+                ['VisitID', 'Value', 'MenuItem'],
+            ),
+            new SnowflakeImportOptions(
+                convertEmptyValuesToNull: [],
+                isIncremental: true, // incremental
+                useTimestamp: false, // disable timestamp
+                numberOfIgnoredLines: ImportOptions::SKIP_FIRST_LINE,
+                ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
+                features: $features,
+            ),
+            static::getSourceInstance(
+                'multi-pk.increment.csv',
+                $multiPKWithNullStub->getColumns(),
+                false,
+                false,
+                ['VisitID', 'Value', 'MenuItem'],
+            ),
+            static::getSnowflakeIncrementalImportOptions(ImportOptions::SKIP_FIRST_LINE, $features),
+            [static::getDestinationSchemaName(), self::TABLE_MULTI_PK_WITH_TS],
+            $multiPKWithNullStub->getRows(),
+            3, // 4 rows in CSV but (200,,"ukulele") is duplicated, so 3 unique PKs
+            self::TABLE_MULTI_PK_WITH_TS,
+        ];
+    }
+
+    /**
+     * The MERGE of a non-typed table joins and deduplicates by COALESCE(pk, ''), so a NULL and an empty
+     * string in a primary key are one row. The reported count has to agree with that - a count grouped
+     * by the raw column would claim two imported rows while one is written.
      *
      * A file source cannot produce this: COPY runs with NULL_IF=() so an empty field arrives as ''. It
      * takes a table source or importAsNull to get a real NULL into a primary key, hence the direct
@@ -374,6 +499,7 @@ SELECT 2,
             useTimestamp: false,
             numberOfIgnoredLines: 0,
             ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
+            features: [SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT],
         );
 
         $destination = (new SnowflakeTableReflection(
@@ -424,117 +550,11 @@ SELECT 2,
     }
 
     /**
-     * Same scenario as the 'simple' case of testIncrementalImport(), but with the
-     * snowflake-legacy-import feature, which runs the load as a dedup table plus UPDATE/DELETE/INSERT
-     * instead of a single MERGE. Both paths must end up with the same rows and the same reported count.
-     */
-    public function testIncrementalImportLegacyImport(): void
-    {
-        $this->initTable(self::TABLE_ACCOUNTS_3);
-
-        $accountsStub = static::getParseCsvStub('expectation.tw_accounts.increment.csv');
-        $fullLoadSource = $this->getSourceInstance(
-            'tw_accounts.csv',
-            $accountsStub->getColumns(),
-            false,
-            false,
-            ['id'],
-        );
-        $incrementalSource = $this->getSourceInstance(
-            'tw_accounts.increment.csv',
-            $accountsStub->getColumns(),
-            false,
-            false,
-            ['id'],
-        );
-        $fullLoadOptions = self::getSnowflakeImportOptions(
-            ImportOptions::SKIP_FIRST_LINE,
-            true,
-            [SnowflakeImportOptions::FEATURE_LEGACY_IMPORT],
-        );
-        $incrementalOptions = self::getSnowflakeIncrementalImportOptions(
-            ImportOptions::SKIP_FIRST_LINE,
-            [SnowflakeImportOptions::FEATURE_LEGACY_IMPORT],
-        );
-
-        $destination = (new SnowflakeTableReflection(
-            $this->connection,
-            $this->getDestinationSchemaName(),
-            self::TABLE_ACCOUNTS_3,
-        ))->getTableDefinition();
-        assert($destination instanceof SnowflakeTableDefinition);
-
-        $toStageImporter = new ToStageImporter($this->connection);
-        $qb = new SnowflakeTableQueryBuilder();
-        $sqlBuilder = new SqlBuilder();
-
-        $fullLoadStagingTable = StageTableDefinitionFactory::createStagingTableDefinition(
-            $destination,
-            $fullLoadSource->getColumnsNames(),
-        );
-        $incrementalLoadStagingTable = StageTableDefinitionFactory::createStagingTableDefinition(
-            $destination,
-            $incrementalSource->getColumnsNames(),
-        );
-
-        try {
-            $this->connection->executeStatement(
-                $qb->getCreateTableCommandFromDefinition($fullLoadStagingTable),
-            );
-            $importState = $toStageImporter->importToStagingTable(
-                $fullLoadSource,
-                $fullLoadStagingTable,
-                $fullLoadOptions,
-            );
-            (new FullImporter($this->connection))->importToTable(
-                $fullLoadStagingTable,
-                $destination,
-                $fullLoadOptions,
-                $importState,
-            );
-
-            $this->connection->executeStatement(
-                $qb->getCreateTableCommandFromDefinition($incrementalLoadStagingTable),
-            );
-            $importState = $toStageImporter->importToStagingTable(
-                $incrementalSource,
-                $incrementalLoadStagingTable,
-                $incrementalOptions,
-            );
-            $result = (new IncrementalImporter($this->connection))->importToTable(
-                $incrementalLoadStagingTable,
-                $destination,
-                $incrementalOptions,
-                $importState,
-            );
-        } finally {
-            foreach ([$fullLoadStagingTable, $incrementalLoadStagingTable] as $stagingTable) {
-                $this->connection->executeStatement(
-                    $sqlBuilder->getDropTableIfExistsCommand(
-                        $stagingTable->getSchemaName(),
-                        $stagingTable->getTableName(),
-                    ),
-                );
-            }
-        }
-
-        // 4 rows in the increment CSV but id=18 is duplicated, so 3 unique PKs
-        self::assertEquals(3, $result->getImportedRowsCount());
-
-        $this->assertSnowflakeTableEqualsExpected(
-            $fullLoadSource,
-            $destination,
-            $incrementalOptions,
-            $accountsStub->getRows(),
-            0,
-        );
-    }
-
-    /**
      * @param string[]     $table
      * @param array<mixed> $expected
      */
     #[DataProvider('incrementalImportData')]
+    #[DataProvider('incrementalImportDataOptimized')]
     public function testIncrementalImport(
         Storage\SourceInterface $fullLoadSource,
         SnowflakeImportOptions $fullLoadOptions,

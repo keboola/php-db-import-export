@@ -240,6 +240,66 @@ select 1,
         self::assertEquals(2, $destinationRef->getRowsCount());
     }
 
+    /**
+     * Same scenario as testLoadToFinalTableWithoutDedup(), but with the snowflake-optimized-import
+     * feature, which replaces TRUNCATE + INSERT inside an explicit transaction with a single
+     * INSERT OVERWRITE. Both must end up with the same rows.
+     */
+    public function testLoadToFinalTableWithoutDedupOptimizedImport(): void
+    {
+        $this->initTable(self::TABLE_COLUMN_NAME_ROW_NUMBER);
+
+        // skipping header
+        $options = $this->getSnowflakeImportOptions(
+            1,
+            false,
+            [SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT],
+        );
+        $source = $this->getSourceInstance(
+            'column-name-row-number.csv',
+            [
+                'id',
+                'row_number',
+            ],
+            false,
+            false,
+            [],
+        );
+
+        $importer = new ToStageImporter($this->connection);
+        $destinationRef = new SnowflakeTableReflection(
+            $this->connection,
+            $this->getDestinationSchemaName(),
+            self::TABLE_COLUMN_NAME_ROW_NUMBER,
+        );
+        $destination = $destinationRef->getTableDefinition();
+        $stagingTable = StageTableDefinitionFactory::createStagingTableDefinition(
+            $destination,
+            [
+            'id',
+            'row_number',
+            ],
+        );
+        $qb = new SnowflakeTableQueryBuilder();
+        $this->connection->executeStatement(
+            $qb->getCreateTableCommandFromDefinition($stagingTable),
+        );
+        $importState = $importer->importToStagingTable(
+            $source,
+            $stagingTable,
+            $options,
+        );
+        $toFinalTableImporter = new FullImporter($this->connection);
+        $toFinalTableImporter->importToTable(
+            $stagingTable,
+            $destination,
+            $options,
+            $importState,
+        );
+
+        self::assertEquals(2, $destinationRef->getRowsCount());
+    }
+
     public function testLoadToTableWithDedupWithSinglePK(): void
     {
         $this->initTable(self::TABLE_SINGLE_PK);
@@ -298,11 +358,11 @@ select 1,
     }
 
     /**
-     * Same scenario as testLoadToTableWithDedupWithSinglePK(), but with the snowflake-legacy-import
-     * feature, which routes the load through the dedup table and TRUNCATE + INSERT in a transaction
-     * instead of a single INSERT OVERWRITE. Both must deduplicate to the same rows.
+     * Same scenario as testLoadToTableWithDedupWithSinglePK(), but with the snowflake-optimized-import
+     * feature, which replaces the dedup table and TRUNCATE + INSERT in a transaction with a single
+     * INSERT OVERWRITE. Both must deduplicate to the same rows.
      */
-    public function testLoadToTableWithDedupWithSinglePKLegacyImport(): void
+    public function testLoadToTableWithDedupWithSinglePKOptimizedImport(): void
     {
         $this->initTable(self::TABLE_SINGLE_PK);
 
@@ -310,7 +370,7 @@ select 1,
         $options = $this->getSnowflakeImportOptions(
             1,
             false,
-            [SnowflakeImportOptions::FEATURE_LEGACY_IMPORT],
+            [SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT],
         );
         $source = $this->getSourceInstance(
             'multi-pk.csv',
@@ -421,6 +481,82 @@ select 1,
         );
         $toFinalTableImporter = new FullImporter($this->connection);
         $result = $toFinalTableImporter->importToTable(
+            $stagingTable,
+            $destination,
+            $options,
+            $importState,
+        );
+
+        self::assertEquals(6, $destinationRef->getRowsCount());
+    }
+
+    /**
+     * Same scenario as testLoadToTableWithDedupWithMultiPK(), but with the snowflake-optimized-import
+     * feature, which collapses the duplicates inline with QUALIFY ROW_NUMBER() instead of through a
+     * dedup table. Both must deduplicate to the same rows.
+     */
+    public function testLoadToTableWithDedupWithMultiPKOptimizedImport(): void
+    {
+        $this->initTable(self::TABLE_MULTI_PK);
+
+        // skipping header
+        $options = $this->getSnowflakeImportOptions(
+            1,
+            false,
+            [SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT],
+        );
+        $source = $this->getSourceInstance(
+            'multi-pk.csv',
+            [
+                'VisitID',
+                'Value',
+                'MenuItem',
+                'Something',
+                'Other',
+            ],
+            false,
+            false,
+            ['VisitID', 'Something'],
+        );
+
+        $importer = new ToStageImporter($this->connection);
+        $destinationRef = new SnowflakeTableReflection(
+            $this->connection,
+            $this->getDestinationSchemaName(),
+            self::TABLE_MULTI_PK,
+        );
+        $destination = $destinationRef->getTableDefinition();
+        $stagingTable = StageTableDefinitionFactory::createStagingTableDefinition(
+            $destination,
+            [
+            'VisitID',
+            'Value',
+            'MenuItem',
+            'Something',
+            'Other',
+            ],
+        );
+        $qb = new SnowflakeTableQueryBuilder();
+        $this->connection->executeStatement(
+            $qb->getCreateTableCommandFromDefinition($stagingTable),
+        );
+        $importState = $importer->importToStagingTable(
+            $source,
+            $stagingTable,
+            $options,
+        );
+
+        // now 6 lines. Add one with same VisitId and Something as an existing line has
+        // -> expecting that this line will be skipped when DEDUP
+        $this->connection->executeQuery(
+            sprintf(
+                "INSERT INTO %s.%s VALUES ('134', 'xx', 'yy', 'abc', 'def');",
+                SnowflakeQuote::quoteSingleIdentifier($stagingTable->getSchemaName()),
+                SnowflakeQuote::quoteSingleIdentifier($stagingTable->getTableName()),
+            ),
+        );
+        $toFinalTableImporter = new FullImporter($this->connection);
+        $toFinalTableImporter->importToTable(
             $stagingTable,
             $destination,
             $options,
