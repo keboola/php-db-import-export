@@ -27,7 +27,6 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
     private const TIMER_DELETE_UPDATED_ROWS = 'deleteUpdatedRowsFromStaging';
     private const TIMER_DEDUP_STAGING = 'dedupStaging';
     private const TIMER_INSERT_INTO_TARGET = 'insertIntoTargetFromStaging';
-    private const TIMER_MERGE_INTO_TARGET = 'mergeIntoTargetFromStaging';
 
     private Connection $connection;
 
@@ -228,7 +227,8 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                 ),
             );
 
-            $state->startTimer(self::TIMER_MERGE_INTO_TARGET);
+            // reported under the multi-statement UPDATE's timer to keep that series continuous
+            $state->startTimer(self::TIMER_UPDATE_TARGET_TABLE);
             $this->connection->executeStatement(
                 $this->sqlBuilder->getMergeCommand(
                     $stagingTableDefinition,
@@ -237,7 +237,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                     $this->timestamp,
                 ),
             );
-            $state->stopTimer(self::TIMER_MERGE_INTO_TARGET);
+            $state->stopTimer(self::TIMER_UPDATE_TARGET_TABLE);
 
             $state->setImportedColumns($stagingTableDefinition->getColumnsNames());
         } catch (Exception $e) {

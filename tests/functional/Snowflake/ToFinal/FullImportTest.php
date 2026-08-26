@@ -38,11 +38,23 @@ class FullImportTest extends SnowflakeBaseTestCase
     }
 
     /**
+     * @return Generator<string, array{string[]}>
+     */
+    public static function typedTableFeatures(): Generator
+    {
+        yield 'multi statement' => [[]];
+        yield 'optimized import' => [[SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT]];
+    }
+
+    /**
      * Test is testing loading of semi-structured data into typed table.
      *
      * This test is not using CSV but inserting data directly into stage table to mimic this behavior
+     *
+     * @param string[] $features
      */
-    public function testLoadTypedTableWithCastingValues(): void
+    #[DataProvider('typedTableFeatures')]
+    public function testLoadTypedTableWithCastingValues(array $features): void
     {
         $this->connection->executeQuery(
             sprintf(
@@ -73,6 +85,7 @@ class FullImportTest extends SnowflakeBaseTestCase
             SnowflakeImportOptions::SAME_TABLES_NOT_REQUIRED,
             SnowflakeImportOptions::NULL_MANIPULATION_SKIP,
             [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
+            features: $features,
         );
 
         $destinationRef = new SnowflakeTableReflection(
