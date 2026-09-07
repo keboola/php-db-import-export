@@ -25,6 +25,10 @@ class BigqueryException extends Exception
             if (preg_match('/Bad \w+ value/m', $e->getMessage()) === 1) {
                 return new BigqueryInputDataException($e->getMessage());
             }
+            // customer can drop `_timestamp` in their own GCP project; any other missing column is our bug
+            if (preg_match('/Column `?_timestamp`? is not present in table/', $e->getMessage()) === 1) {
+                return new BigqueryInputDataException(self::extractErrorMessage($e->getMessage()), 0, $e);
+            }
             if (self::isResourcesExceededError($e->getMessage())) {
                 return new BigqueryResourcesExceededException(
                     self::extractErrorMessage($e->getMessage()) . ' ' . self::RESOURCES_EXCEEDED_MESSAGE,
