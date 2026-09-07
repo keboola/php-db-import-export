@@ -978,4 +978,68 @@ class BigqueryExceptionTest extends TestCase
         self::assertInstanceOf(BigqueryException::class, $e);
         self::assertNotInstanceOf(BigqueryInputDataException::class, $e);
     }
+
+    public function testCovertExceptionMissingTimestampColumnIsUserError(): void
+    {
+        $message = 'Column _timestamp is not present in table in_c_main.my_table at [1:14962]';
+
+        $e = BigqueryException::covertException(new BadRequestException(
+            (string) json_encode([
+                'error' => [
+                    'code' => 400,
+                    'message' => $message,
+                    'errors' => [
+                        [
+                            'message' => $message,
+                            'domain' => 'global',
+                            'reason' => 'invalidQuery',
+                        ],
+                    ],
+                    'status' => 'INVALID_ARGUMENT',
+                ],
+            ]),
+            400,
+        ));
+
+        self::assertInstanceOf(BigqueryInputDataException::class, $e);
+        self::assertSame($message, $e->getMessage());
+        self::assertStringNotContainsString('{"error"', $e->getMessage());
+        self::assertInstanceOf(BadRequestException::class, $e->getPrevious());
+    }
+
+    public function testCovertExceptionMissingTimestampColumnNonJsonMessageIsKeptIntact(): void
+    {
+        $e = BigqueryException::covertException(
+            new BadRequestException('Column `_timestamp` is not present in table in_c_main.my_table', 400),
+        );
+
+        self::assertInstanceOf(BigqueryInputDataException::class, $e);
+        self::assertSame('Column `_timestamp` is not present in table in_c_main.my_table', $e->getMessage());
+    }
+
+    public function testCovertExceptionMissingDataColumnIsNotUserError(): void
+    {
+        $message = 'Column price is not present in table in_c_main.my_table at [1:14962]';
+
+        $e = BigqueryException::covertException(new BadRequestException(
+            (string) json_encode([
+                'error' => [
+                    'code' => 400,
+                    'message' => $message,
+                    'errors' => [
+                        [
+                            'message' => $message,
+                            'domain' => 'global',
+                            'reason' => 'invalidQuery',
+                        ],
+                    ],
+                    'status' => 'INVALID_ARGUMENT',
+                ],
+            ]),
+            400,
+        ));
+
+        self::assertInstanceOf(BigqueryException::class, $e);
+        self::assertNotInstanceOf(BigqueryInputDataException::class, $e);
+    }
 }
