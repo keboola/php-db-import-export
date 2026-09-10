@@ -6,14 +6,11 @@ namespace Tests\Keboola\Db\ImportExportFunctional\Snowflake;
 
 use DateTime;
 use DateTimeZone;
-use Doctrine\DBAL\Connection;
 use Keboola\Csv\CsvFile;
+use Keboola\Db\Import\Snowflake\Connection;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage\Snowflake\Table;
 use Keboola\Db\ImportExport\Storage\SourceInterface;
-use Keboola\TableBackendUtils\Connection\Snowflake\SnowflakeConnectionFactory;
-use Keboola\TableBackendUtils\Connection\Snowflake\SnowflakePrivateKey;
-use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableReflection;
 use Tests\Keboola\Db\ImportExportCommon\StorageTrait;
 use Tests\Keboola\Db\ImportExportFunctional\ImportExportBaseTest;
 
@@ -38,11 +35,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
         $sortKey,
         string $message = 'Imported tables are not the same as expected',
     ): void {
-        $tableColumns = (new SnowflakeTableReflection(
-            $this->connection,
-            $table->getSchema(),
-            $table->getTableName(),
-        ))->getColumnsNames();
+        $tableColumns = $this->connection->getTableColumns($table->getSchema(), $table->getTableName());
 
         if ($options->useTimestamp()) {
             $this->assertContains('_timestamp', $tableColumns);
@@ -74,7 +67,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
         );
 
         /** @var list<array<string>> $rows Because of BASE64_ENCODE() used in SELECT few lines higher.  */
-        $rows = $this->connection->fetchAllAssociative($sql);
+        $rows = $this->connection->fetchAll($sql);
 
         $queryResult = array_map(
             function ($row) {
@@ -113,11 +106,11 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
                 $this->getDestinationSchemaName(),
             ] as $schema
         ) {
-            $this->connection->executeStatement(sprintf('DROP SCHEMA IF EXISTS "%s"', $schema));
-            $this->connection->executeStatement(sprintf('CREATE SCHEMA "%s"', $schema));
+            $this->connection->query(sprintf('DROP SCHEMA IF EXISTS "%s"', $schema));
+            $this->connection->query(sprintf('CREATE SCHEMA "%s"', $schema));
         }
 
-        $this->connection->executeStatement(sprintf(
+        $this->connection->query(sprintf(
             'CREATE TABLE "%s"."out.lemma" (
           "ts" VARCHAR NOT NULL DEFAULT \'\',
           "lemma" VARCHAR NOT NULL DEFAULT \'\',
@@ -127,7 +120,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             $this->getDestinationSchemaName(),
         ),);
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'CREATE TABLE "%s"."out.csv_2Cols" (
           "col1" VARCHAR NOT NULL DEFAULT \'\',
@@ -138,7 +131,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'INSERT INTO "%s"."out.csv_2Cols" VALUES
                   (\'x\', \'y\', \'%s\');',
@@ -147,7 +140,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'CREATE TABLE "%s"."out.csv_2Cols" (
           "col1" VARCHAR NOT NULL DEFAULT \'\',
@@ -157,7 +150,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'INSERT INTO "%s"."out.csv_2Cols" VALUES
                 (\'a\', \'b\'), (\'c\', \'d\');
@@ -166,7 +159,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'CREATE TABLE "%s"."accounts-3" (
                 "id" varchar(65535) NOT NULL,
@@ -188,7 +181,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'CREATE TABLE "%s"."accounts-without-ts" (
                 "id" varchar(65535) NOT NULL,
@@ -209,7 +202,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'CREATE TABLE "%s"."table" (
               "column"  varchar(65535) NOT NULL DEFAULT \'\',
@@ -220,7 +213,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'CREATE TABLE "%s"."types" (
               "charCol"  varchar NOT NULL,
@@ -233,7 +226,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'CREATE TABLE "%s"."types" (
               "charCol"  varchar(65535) NOT NULL,
@@ -245,7 +238,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'INSERT INTO "%s"."types" VALUES 
               (\'a\', \'10.5\', \'0.3\', TRUE)
@@ -254,7 +247,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'CREATE TABLE "%s"."out.no_timestamp_table" (
               "col1" VARCHAR NOT NULL DEFAULT \'\',
@@ -264,7 +257,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'CREATE TABLE "%s"."column-name-row-number" (
               "id" varchar(65535) NOT NULL,
@@ -276,7 +269,7 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
             ),
         );
 
-        $this->connection->executeStatement(
+        $this->connection->query(
             sprintf(
                 'CREATE TABLE "%s"."multi-pk" (
             "VisitID" VARCHAR NOT NULL DEFAULT \'\',
@@ -294,23 +287,31 @@ abstract class SnowflakeImportExportBaseTest extends ImportExportBaseTest
 
     private function getSnowflakeConnection(): Connection
     {
-        return SnowflakeConnectionFactory::getConnectionWithCert(
-            (string) getenv('SNOWFLAKE_HOST'),
-            (string) getenv('SNOWFLAKE_USER'),
-            SnowflakePrivateKey::normalize((string) getenv('SNOWFLAKE_PRIVATE_KEY')),
-            [
-                'port' => (string) getenv('SNOWFLAKE_PORT'),
-                'warehouse' => (string) getenv('SNOWFLAKE_WAREHOUSE'),
-                'database' => (string) getenv('SNOWFLAKE_DATABASE'),
-                'tracing' => 6,
-            ],
+        $connection = new Connection([
+            'host' => getenv('SNOWFLAKE_HOST'),
+            'port' => getenv('SNOWFLAKE_PORT'),
+            'user' => getenv('SNOWFLAKE_USER'),
+            'password' => getenv('SNOWFLAKE_PASSWORD'),
+            'tracing'=>6,
+            ],);
+        $connection->query(
+            sprintf(
+                'USE DATABASE %s',
+                $connection->quoteIdentifier((string) getenv('SNOWFLAKE_DATABASE')),
+            ),
         );
+        $connection->query(
+            sprintf(
+                'USE WAREHOUSE %s',
+                $connection->quoteIdentifier((string) getenv('SNOWFLAKE_WAREHOUSE')),
+            ),
+        );
+        return $connection;
     }
 
     public function tearDown(): void
     {
         parent::tearDown();
-        $this->connection->close();
         unset($this->connection);
     }
 
