@@ -65,23 +65,20 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
             'accounts-3',
         );
 
-        if (getenv('STORAGE_TYPE') === StorageType::STORAGE_S3) {
-            // Snowflake COPY INTO with nonexistent S3 files succeeds with 0 rows
-            $result = (new Importer($this->connection))->importTable(
-                $source,
-                $destination,
-                $options,
-            );
-            $this->assertEquals(0, $result->getImportedRowsCount());
-        } else {
-            $this->expectException(Exception::class);
-            $this->expectExceptionCode(Exception::MANDATORY_FILE_NOT_FOUND);
-            (new Importer($this->connection))->importTable(
-                $source,
-                $destination,
-                $options,
-            );
-        }
+        // ABS and GCS fail while reading the manifest, before any SQL runs. On S3 the manifest
+        // reads fine and the missing file surfaces as a COPY error from Snowflake, so the codes
+        // differ - but both raise rather than reporting a successful import of nothing.
+        $this->expectException(Exception::class);
+        $this->expectExceptionCode(
+            getenv('STORAGE_TYPE') === StorageType::STORAGE_S3
+                ? Exception::INVALID_SOURCE_DATA
+                : Exception::MANDATORY_FILE_NOT_FOUND,
+        );
+        (new Importer($this->connection))->importTable(
+            $source,
+            $destination,
+            $options,
+        );
     }
 
     public function testMoreColumnsShouldThrowException(): void
