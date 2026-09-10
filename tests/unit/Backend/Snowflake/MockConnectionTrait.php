@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportUnit\Backend\Snowflake;
 
-use Keboola\Db\Import\Snowflake\Connection;
+use Doctrine\DBAL\Connection;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\QuoteHelper;
 use PHPUnit\Framework\MockObject\MockObject;
 

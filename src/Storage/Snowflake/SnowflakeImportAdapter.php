@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\Snowflake;
 
-use Keboola\Db\Import\Snowflake\Connection;
+use Doctrine\DBAL\Connection;
+use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportAdapterInterface;
 use Keboola\Db\ImportExport\Backend\Snowflake\SqlCommandBuilder;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
@@ -47,25 +48,25 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
     ): int {
         $quotedColumns = array_map(
             function ($column) {
-                return $this->connection->quoteIdentifier($column);
+                return SnowflakeQuote::quoteSingleIdentifier($column);
             },
             $source->getColumnsNames(),
         );
 
         $sql = sprintf(
             'INSERT INTO %s.%s (%s) %s',
-            $this->connection->quoteIdentifier($destination->getSchema()),
-            $this->connection->quoteIdentifier($stagingTableName),
+            SnowflakeQuote::quoteSingleIdentifier($destination->getSchema()),
+            SnowflakeQuote::quoteSingleIdentifier($stagingTableName),
             implode(', ', $quotedColumns),
             $source->getFromStatement(),
         );
 
-        $this->connection->query(
+        $this->connection->executeStatement(
             $sql,
             $source instanceof SelectSource ? $source->getQueryBindings() : [],
         );
 
-        $rows = $this->connection->fetchAll(
+        $rows = $this->connection->fetchAllAssociative(
             $this->sqlBuilder->getTableItemsCountCommand(
                 $destination->getSchema(),
                 $stagingTableName,

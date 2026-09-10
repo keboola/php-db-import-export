@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\S3;
 
-use Keboola\Db\Import\Snowflake\Connection;
+use Doctrine\DBAL\Connection;
+use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 use Keboola\Db\ImportExport\Backend\ImporterInterface;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\CopyCommandCsvOptionsHelper;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\QuoteHelper;
@@ -50,10 +51,10 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
         $commands = $this->getCommands($source, $destination, $importOptions, $stagingTableName);
 
         foreach ($commands as $sql) {
-            $this->connection->query($sql);
+            $this->connection->executeStatement($sql);
         }
 
-        $rows = $this->connection->fetchAll(
+        $rows = $this->connection->fetchAllAssociative(
             $this->sqlBuilder->getTableItemsCountCommand(
                 $destination->getSchema(),
                 $stagingTableName,
@@ -90,8 +91,8 @@ CREDENTIALS = (AWS_KEY_ID = %s AWS_SECRET_KEY = %s)
 REGION = %s
 FILE_FORMAT = (TYPE=CSV %s)
 FILES = (%s)',
-                $this->connection->quoteIdentifier($destination->getSchema()),
-                $this->connection->quoteIdentifier($stagingTableName),
+                SnowflakeQuote::quoteSingleIdentifier($destination->getSchema()),
+                SnowflakeQuote::quoteSingleIdentifier($stagingTableName),
                 QuoteHelper::quote($source->getS3Prefix()),
                 QuoteHelper::quote($source->getKey()),
                 QuoteHelper::quote($source->getSecret()),
