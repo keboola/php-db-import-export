@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Keboola\Db\ImportExport\Storage\Snowflake;
 
 use Doctrine\DBAL\Connection;
-use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportAdapterInterface;
 use Keboola\Db\ImportExport\Backend\Snowflake\SqlCommandBuilder;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
 use Keboola\Db\ImportExport\Storage;
+use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 
 class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
 {
@@ -66,6 +66,7 @@ class SnowflakeImportAdapter implements SnowflakeImportAdapterInterface
             $source instanceof SelectSource ? $source->getQueryBindings() : [],
         );
 
+        /** @var array<array{count: int|numeric-string}> $rows */
         $rows = $this->connection->fetchAllAssociative(
             $this->sqlBuilder->getTableItemsCountCommand(
                 $destination->getSchema(),

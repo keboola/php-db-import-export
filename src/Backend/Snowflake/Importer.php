@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Backend\Snowflake;
 
+use Doctrine\DBAL\Connection;
 use Exception as InternalException;
 use Keboola\Db\Import\Exception;
 use Keboola\Db\Import\Result;
-use Doctrine\DBAL\Connection;
-use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableReflection;
 use Keboola\Db\ImportExport\Backend\BackendImportAdapterInterface;
 use Keboola\Db\ImportExport\Backend\Helper\BackendHelper;
 use Keboola\Db\ImportExport\Backend\ImporterInterface;
@@ -16,6 +15,7 @@ use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\DateTimeHelper;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
 use Keboola\Db\ImportExport\Storage;
+use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableReflection;
 use ReflectionClass;
 use Throwable;
 

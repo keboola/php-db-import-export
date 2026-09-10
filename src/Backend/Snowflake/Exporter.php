@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Backend\Snowflake;
 
-use Exception;
 use Doctrine\DBAL\Connection;
+use Exception;
 use Keboola\Db\ImportExport\Backend\BackendExportAdapterInterface;
 use Keboola\Db\ImportExport\Backend\ExporterInterface;
 use Keboola\Db\ImportExport\ExportOptionsInterface;
