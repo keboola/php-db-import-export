@@ -129,10 +129,28 @@ GRANT ALL PRIVILEGES ON DATABASE "<PREFIX>_DB_IMPORT_EXPORT" TO ROLE "<PREFIX>_D
 GRANT USAGE ON WAREHOUSE "DEV" TO ROLE "<PREFIX>_DB_IMPORT_EXPORT";
 
 CREATE USER "<PREFIX>_DB_IMPORT_EXPORT"
-  PASSWORD = '<password>'
+  TYPE = SERVICE
   DEFAULT_ROLE = "<PREFIX>_DB_IMPORT_EXPORT";
 
 GRANT ROLE "<PREFIX>_DB_IMPORT_EXPORT" TO USER "<PREFIX>_DB_IMPORT_EXPORT";
+```
+
+The tests authenticate with a key pair only, so the user needs no password. Generate the pair
+and register the public half:
+
+```bash
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
+openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
+
+PUBLIC_KEY=$(sed '1d;$d' rsa_key.pub | tr -d '\n')
+echo "ALTER USER \"<PREFIX>_DB_IMPORT_EXPORT\" SET RSA_PUBLIC_KEY='${PUBLIC_KEY}';"
+```
+
+`SNOWFLAKE_PRIVATE_KEY` holds the base64 body of `rsa_key.p8` on a single line, without the
+`-----BEGIN/END PRIVATE KEY-----` lines:
+
+```bash
+sed '1d;$d' rsa_key.p8 | tr -d '\n'
 ```
 
 Set env variables in `.env`:
@@ -141,7 +159,7 @@ Set env variables in `.env`:
 SNOWFLAKE_HOST=keboolaconnectiondev.us-east-1.snowflakecomputing.com
 SNOWFLAKE_PORT=443
 SNOWFLAKE_USER=<PREFIX>_DB_IMPORT_EXPORT
-SNOWFLAKE_PASSWORD=<password>
+SNOWFLAKE_PRIVATE_KEY=<base64 key body>
 SNOWFLAKE_DATABASE=<PREFIX>_DB_IMPORT_EXPORT
 SNOWFLAKE_WAREHOUSE=DEV
 ```

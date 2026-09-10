@@ -42,6 +42,6 @@ try {
     }
 } catch (Throwable $e) {
     // Best effort - a cleanup failure must never fail the build.
-    fwrite(STDERR, sprintf("[cleanup] non-fatal error: %s\n", $e->getMessage()));
+    fwrite(STDERR, sprintf("[cleanup] non-fatal error: %s: %s\n", get_class($e), $e->getMessage()));
     exit(0);
 }
