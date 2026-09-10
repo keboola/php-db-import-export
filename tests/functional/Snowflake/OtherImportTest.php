@@ -137,11 +137,11 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
             $options,
         );
 
-        $importedData = $this->connection->fetchAll($fetchSQL);
+        $importedData = $this->connection->fetchAllAssociative($fetchSQL);
 
         $this->assertCount(2, $importedData);
 
-        $this->connection->query(sprintf(
+        $this->connection->executeStatement(sprintf(
             'INSERT INTO "%s"."out.csv_2Cols" VALUES
                 (\'e\', \'f\');
         ',
@@ -154,38 +154,38 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
             $options,
         );
 
-        $importedData = $this->connection->fetchAll($fetchSQL);
+        $importedData = $this->connection->fetchAllAssociative($fetchSQL);
 
         $this->assertCount(3, $importedData);
     }
 
     public function testNullifyCopy(): void
     {
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'DROP TABLE IF EXISTS "%s"."nullify"',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'CREATE TABLE "%s"."nullify" ("id" VARCHAR, "name" VARCHAR, "price" NUMERIC)',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'DROP TABLE IF EXISTS "%s"."nullify_src" ',
                 $this->getSourceSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'CREATE TABLE "%s"."nullify_src" ("id" VARCHAR, "name" VARCHAR, "price" NUMERIC)',
                 $this->getSourceSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO "%s"."nullify_src" VALUES(\'1\', \'\', NULL), (\'2\', NULL, 500)',
                 $this->getSourceSchemaName(),
@@ -215,7 +215,7 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
             $options,
         );
 
-        $importedData = $this->connection->fetchAll(
+        $importedData = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT "id", "name", "price" FROM "%s"."nullify" ORDER BY "id" ASC',
                 $this->getDestinationSchemaName(),
@@ -229,37 +229,37 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
 
     public function testNullifyCopyIncremental(): void
     {
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'DROP TABLE IF EXISTS "%s"."nullify" ',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'CREATE TABLE "%s"."nullify" ("id" VARCHAR, "name" VARCHAR, "price" NUMERIC)',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO "%s"."nullify" VALUES(\'4\', NULL, 50)',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'DROP TABLE IF EXISTS "%s"."nullify_src" ',
                 $this->getSourceSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'CREATE TABLE "%s"."nullify_src" ("id" VARCHAR, "name" VARCHAR, "price" NUMERIC)',
                 $this->getSourceSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO "%s"."nullify_src" VALUES(\'1\', \'\', NULL), (\'2\', NULL, 500)',
                 $this->getSourceSchemaName(),
@@ -289,7 +289,7 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
             $options,
         );
 
-        $importedData = $this->connection->fetchAll(
+        $importedData = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT "id", "name", "price" FROM "%s"."nullify" ORDER BY "id" ASC',
                 $this->getDestinationSchemaName(),
@@ -304,38 +304,38 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
 
     public function testNullifyCopyIncrementalWithPk(): void
     {
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'DROP TABLE IF EXISTS "%s"."nullify" ',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'CREATE TABLE "%s"."nullify" ("id" VARCHAR, "name" VARCHAR, "price" NUMERIC, PRIMARY KEY("id"))',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO "%s"."nullify" VALUES(\'4\', \'3\', 2)',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'DROP TABLE IF EXISTS "%s"."nullify_src" ',
                 $this->getSourceSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
         // phpcs:ignore
             'CREATE TABLE "%s"."nullify_src" ("id" VARCHAR NOT NULL, "name" VARCHAR NOT NULL, "price" VARCHAR NOT NULL, PRIMARY KEY("id"))',
                 $this->getSourceSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO "%s"."nullify_src" VALUES(\'1\', \'\', \'\'), (\'2\', \'\', \'500\'), (\'4\', \'\', \'\')',
                 $this->getSourceSchemaName(),
@@ -364,7 +364,7 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
             $options,
         );
 
-        $importedData = $this->connection->fetchAll(
+        $importedData = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT "id", "name", "price" FROM "%s"."nullify"',
                 $this->getDestinationSchemaName(),
@@ -394,38 +394,38 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
 
     public function testNullifyCopyIncrementalWithPkDestinationWithNull(): void
     {
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'DROP TABLE IF EXISTS "%s"."nullify" ',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'CREATE TABLE "%s"."nullify" ("id" VARCHAR, "name" VARCHAR, "price" NUMERIC, PRIMARY KEY("id"))',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO "%s"."nullify" VALUES(\'4\', NULL, NULL)',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'DROP TABLE IF EXISTS "%s"."nullify_src" ',
                 $this->getSourceSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
         // phpcs:ignore
             'CREATE TABLE "%s"."nullify_src" ("id" VARCHAR NOT NULL, "name" VARCHAR NOT NULL, "price" VARCHAR NOT NULL, PRIMARY KEY("id"))',
                 $this->getSourceSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 // phpcs:ignore
                 'INSERT INTO "%s"."nullify_src" VALUES(\'1\', \'\', \'\'), (\'2\', \'\', \'500\'), (\'4\', \'\', \'500\')',
@@ -455,7 +455,7 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
             $options,
         );
 
-        $importedData = $this->connection->fetchAll(
+        $importedData = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT "id", "name", "price" FROM "%s"."nullify"',
                 $this->getDestinationSchemaName(),
@@ -485,13 +485,13 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
 
     public function testNullifyCsv(): void
     {
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'DROP TABLE IF EXISTS "%s"."nullify" ',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'CREATE TABLE "%s"."nullify" ("id" VARCHAR, "name" VARCHAR, "price" NUMERIC)',
                 $this->getDestinationSchemaName(),
@@ -516,7 +516,7 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
             $options,
         );
 
-        $importedData = $this->connection->fetchAll(
+        $importedData = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT "id", "name", "price" FROM "%s"."nullify" ORDER BY "id" ASC',
                 $this->getDestinationSchemaName(),
@@ -529,19 +529,19 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
 
     public function testNullifyCsvIncremental(): void
     {
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'DROP TABLE IF EXISTS "%s"."nullify" ',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'CREATE TABLE "%s"."nullify" ("id" VARCHAR, "name" VARCHAR, "price" NUMERIC)',
                 $this->getDestinationSchemaName(),
             ),
         );
-        $this->connection->query(
+        $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO "%s"."nullify" VALUES(\'4\', NULL, 50)',
                 $this->getDestinationSchemaName(),
@@ -565,7 +565,7 @@ class OtherImportTest extends SnowflakeImportExportBaseTest
             $destination,
             $options,
         );
-        $importedData = $this->connection->fetchAll(
+        $importedData = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT "id", "name", "price" FROM "%s"."nullify" ORDER BY "id" ASC',
                 $this->getDestinationSchemaName(),
