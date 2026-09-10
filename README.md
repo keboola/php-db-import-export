@@ -129,21 +129,14 @@ GRANT ALL PRIVILEGES ON DATABASE "<PREFIX>_DB_IMPORT_EXPORT" TO ROLE "<PREFIX>_D
 GRANT USAGE ON WAREHOUSE "DEV" TO ROLE "<PREFIX>_DB_IMPORT_EXPORT";
 
 CREATE USER "<PREFIX>_DB_IMPORT_EXPORT"
-  TYPE = LEGACY_SERVICE
-  PASSWORD = '<password>'
+  TYPE = SERVICE
   DEFAULT_ROLE = "<PREFIX>_DB_IMPORT_EXPORT";
 
 GRANT ROLE "<PREFIX>_DB_IMPORT_EXPORT" TO USER "<PREFIX>_DB_IMPORT_EXPORT";
 ```
 
-The user needs **both** authentication methods. Everything authenticates with a key pair
-except the tests of the deprecated `Backend\Snowflake\Importer`
-(`ExportLegacyTest`, `FullImportTest`, `IncrementalImportTest`, `OtherImportTest`), which take
-`Keboola\Db\Import\Snowflake\Connection` from `keboola/php-csv-db-import` - that class has no
-key-pair support up to and including 6.1.2. `TYPE = LEGACY_SERVICE` keeps the password usable;
-a `TYPE = PERSON` user is refused by the account MFA policy.
-
-Generate the pair and register the public half:
+The tests authenticate with a key pair only, so the user needs no password. Generate the pair
+and register the public half:
 
 ```bash
 openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
@@ -166,7 +159,6 @@ Set env variables in `.env`:
 SNOWFLAKE_HOST=keboolaconnectiondev.us-east-1.snowflakecomputing.com
 SNOWFLAKE_PORT=443
 SNOWFLAKE_USER=<PREFIX>_DB_IMPORT_EXPORT
-SNOWFLAKE_PASSWORD=<password>
 SNOWFLAKE_PRIVATE_KEY=<base64 key body>
 SNOWFLAKE_DATABASE=<PREFIX>_DB_IMPORT_EXPORT
 SNOWFLAKE_WAREHOUSE=DEV

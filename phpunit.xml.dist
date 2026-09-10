@@ -12,22 +12,14 @@
 
         <testsuite name="snowflake">
             <directory>tests/functional/Snowflake</directory>
-            <exclude>tests/functional/Snowflake/SnowflakeImportExportBaseTest.php</exclude>
         </testsuite>
 
         <testsuite name="snowflake-s3">
             <directory>tests/functional/Snowflake</directory>
-            <exclude>tests/functional/Snowflake/SnowflakeImportExportBaseTest.php</exclude>
         </testsuite>
 
         <testsuite name="snowflake-gcs">
             <directory>tests/functional/Snowflake</directory>
-            <exclude>tests/functional/Snowflake/SnowflakeImportExportBaseTest.php</exclude>
-            <exclude>tests/functional/Snowflake/ExportLegacyTest.php</exclude>
-            <!--Older test cases with ImporterInterface not supporting GCS-->
-            <exclude>tests/functional/Snowflake/OtherImportTest.php</exclude>
-            <exclude>tests/functional/Snowflake/FullImportTest.php</exclude>
-            <exclude>tests/functional/Snowflake/IncrementalImportTest.php</exclude>
         </testsuite>
 
         <testsuite name="snowflake-abs">
@@ -36,10 +28,6 @@
             <!-- abs is slow on CI SNFLK -->
             <directory>tests/functional/Snowflake/Exporter</directory>
             <directory>tests/functional/Snowflake/ToStage</directory>
-            <file>tests/functional/Snowflake/ExportLegacyTest.php</file>
-            <file>tests/functional/Snowflake/OtherImportTest.php</file>
-            <file>tests/functional/Snowflake/FullImportTest.php</file>
-            <file>tests/functional/Snowflake/IncrementalImportTest.php</file>
         </testsuite>
 
         <testsuite name="tests-bigquery">
