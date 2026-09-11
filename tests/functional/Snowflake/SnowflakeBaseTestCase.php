@@ -15,6 +15,7 @@ use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage\SourceInterface;
 use Keboola\TableBackendUtils\Column\Snowflake\SnowflakeColumn;
 use Keboola\TableBackendUtils\Connection\Snowflake\SnowflakeConnectionFactory;
+use Keboola\TableBackendUtils\Connection\Snowflake\SnowflakePrivateKey;
 use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableDefinition;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableReflection;
@@ -60,10 +61,10 @@ class SnowflakeBaseTestCase extends ImportExportBaseTest
 
     protected function getSnowflakeConnection(): Connection
     {
-        return SnowflakeConnectionFactory::getConnection(
+        return SnowflakeConnectionFactory::getConnectionWithCert(
             (string) getenv('SNOWFLAKE_HOST'),
             (string) getenv('SNOWFLAKE_USER'),
-            (string) getenv('SNOWFLAKE_PASSWORD'),
+            SnowflakePrivateKey::normalize((string) getenv('SNOWFLAKE_PRIVATE_KEY')),
             [
                 'port' => (string) getenv('SNOWFLAKE_PORT'),
                 'warehouse' => (string) getenv('SNOWFLAKE_WAREHOUSE'),

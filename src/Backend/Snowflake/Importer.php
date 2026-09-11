@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Backend\Snowflake;
 
+use Doctrine\DBAL\Connection;
 use Exception as InternalException;
 use Keboola\Db\Import\Exception;
 use Keboola\Db\Import\Result;
-use Keboola\Db\Import\Snowflake\Connection;
 use Keboola\Db\ImportExport\Backend\BackendImportAdapterInterface;
 use Keboola\Db\ImportExport\Backend\Helper\BackendHelper;
 use Keboola\Db\ImportExport\Backend\ImporterInterface;
@@ -15,6 +15,7 @@ use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\DateTimeHelper;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
 use Keboola\Db\ImportExport\Storage;
+use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableReflection;
 use ReflectionClass;
 use Throwable;
 
@@ -74,10 +75,11 @@ class Importer implements ImporterInterface
                 $options,
                 $adapter,
             );
-            $primaryKeys = $this->connection->getTablePrimaryKey(
+            $primaryKeys = (new SnowflakeTableReflection(
+                $this->connection,
                 $destination->getSchema(),
                 $destination->getTableName(),
-            );
+            ))->getPrimaryKeysNames();
             if ($options->isIncremental()) {
                 $this->doIncrementalLoad($options, $source, $destination, $primaryKeys);
             } else {
@@ -104,10 +106,11 @@ class Importer implements ImporterInterface
             );
         }
 
-        $tableColumns = $this->connection->getTableColumns(
+        $tableColumns = (new SnowflakeTableReflection(
+            $this->connection,
             $destination->getSchema(),
             $destination->getTableName(),
-        );
+        ))->getColumnsNames();
 
         $moreColumns = array_diff($source->getColumnsNames(), $tableColumns);
         if (!empty($moreColumns)) {
@@ -124,7 +127,7 @@ class Importer implements ImporterInterface
             $this->importState->startTimer($timerName);
         }
 
-        $this->connection->query($query);
+        $this->connection->executeStatement($query);
 
         if ($timerName) {
             $this->importState->stopTimer($timerName);

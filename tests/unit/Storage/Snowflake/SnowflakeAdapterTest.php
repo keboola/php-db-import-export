@@ -35,10 +35,10 @@ class SnowflakeAdapterTest extends BaseTestCase
         $source = new Storage\Snowflake\Table('schema', 'table', ['col1', 'col2']);
 
         $conn = $this->mockConnection();
-        $conn->expects($this->once())->method('query')->with(
+        $conn->expects($this->once())->method('executeStatement')->with(
             'INSERT INTO "schema"."stagingTable" ("col1", "col2") SELECT "col1", "col2" FROM "schema"."table"',
         );
-        $conn->expects($this->once())->method('fetchAll')
+        $conn->expects($this->once())->method('fetchAllAssociative')
             ->with('SELECT COUNT(*) AS "count" FROM "schema"."stagingTable"')
             ->willReturn(
                 [

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\GCS;
 
-use Keboola\Db\Import\Snowflake\Connection;
+use Doctrine\DBAL\Connection;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeExportAdapterInterface;
 use Keboola\Db\ImportExport\ExportOptions;
 use Keboola\Db\ImportExport\ExportOptionsInterface;
@@ -63,10 +63,10 @@ DETAILED_OUTPUT = TRUE',
             $destination->getStorageIntegrationName(),
             $exportOptions->isCompressed() ? "COMPRESSION='GZIP'" : "COMPRESSION='NONE'",
         );
-        $this->connection->query($sql, $source->getQueryBindings());
+        $this->connection->executeStatement($sql, $source->getQueryBindings());
 
         /** @var array<array{FILE_NAME: string, FILE_SIZE: string, ROW_COUNT: string}> $unloadedFiles */
-        $unloadedFiles = $this->connection->fetchAll('select * from table(result_scan(last_query_id()));');
+        $unloadedFiles = $this->connection->fetchAllAssociative('select * from table(result_scan(last_query_id()));');
 
         if ($exportOptions->generateManifest()) {
             (new Storage\GCS\ManifestGenerator\GcsSlicedManifestFromUnloadQueryResultGenerator(

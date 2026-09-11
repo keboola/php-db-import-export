@@ -50,7 +50,7 @@ class SnowflakeImportAdapterTest extends BaseTestCase
         $source->expects(self::once())->method('getSecret')->willReturn('s3Secret');
         $source->expects(self::once())->method('getRegion')->willReturn('s3Region');
         $conn = $this->mockConnection();
-        $conn->expects(self::once())->method('query')->with(
+        $conn->expects(self::once())->method('executeStatement')->with(
             <<<EOT
 COPY INTO "schema"."stagingTable"
 FROM 's3Prefix' 
@@ -60,7 +60,7 @@ FILE_FORMAT = (TYPE=CSV FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '\"
 FILES = ('s3://url')
 EOT,
         );
-        $conn->expects(self::once())->method('fetchAll')
+        $conn->expects(self::once())->method('fetchAllAssociative')
             ->with('SELECT COUNT(*) AS "count" FROM "schema"."stagingTable"')
             ->willReturn(
                 [
@@ -121,7 +121,7 @@ EOT,
 
         $conn = $this->mockConnection();
         $matcher = $this->exactly(2);
-        $conn->expects($matcher)->method('query')->willReturnCallback(
+        $conn->expects($matcher)->method('executeStatement')->willReturnCallback(
             function (...$parameters) use ($matcher, $cmd1Files, $cmd2Files) {
                 if ($matcher->numberOfInvocations() === 1) {
                     $this->assertSame(
@@ -151,7 +151,7 @@ EOT,
                 }
             },
         );
-        $conn->expects(self::once())->method('fetchAll')
+        $conn->expects(self::once())->method('fetchAllAssociative')
             ->with('SELECT COUNT(*) AS "count" FROM "schema"."stagingTable"')
             ->willReturn(
                 [

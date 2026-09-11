@@ -49,7 +49,7 @@ class SnowflakeImportAdapterTest extends BaseTestCase
         $source->expects($this->once())->method('getSasToken')->willReturn('sasToken');
 
         $conn = $this->mockConnection();
-        $conn->expects($this->once())->method('query')->with(
+        $conn->expects($this->once())->method('executeStatement')->with(
             <<<EOT
 COPY INTO "schema"."stagingTable" 
 FROM 'containerUrl'
@@ -58,7 +58,7 @@ FILE_FORMAT = (TYPE=CSV FIELD_DELIMITER = ',' FIELD_OPTIONALLY_ENCLOSED_BY = '\"
 FILES = ('azure://url')
 EOT,
         );
-        $conn->expects($this->once())->method('fetchAll')
+        $conn->expects($this->once())->method('fetchAllAssociative')
             ->with('SELECT COUNT(*) AS "count" FROM "schema"."stagingTable"')
             ->willReturn(
                 [
@@ -118,7 +118,7 @@ EOT,
 
         $conn = $this->mockConnection();
         $matcher = $this->exactly(2);
-        $conn->expects($matcher)->method('query')->willReturnCallback(
+        $conn->expects($matcher)->method('executeStatement')->willReturnCallback(
             function (...$parameters) use ($matcher, $cmd1Files, $cmd2Files) {
                 if ($matcher->numberOfInvocations() === 1) {
                     $this->assertSame(
@@ -146,7 +146,7 @@ EOT,
                 }
             },
         );
-        $conn->expects($this->once())->method('fetchAll')
+        $conn->expects($this->once())->method('fetchAllAssociative')
             ->with('SELECT COUNT(*) AS "count" FROM "schema"."stagingTable"')
             ->willReturn(
                 [

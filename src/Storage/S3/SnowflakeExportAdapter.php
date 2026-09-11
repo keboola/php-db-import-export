@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Storage\S3;
 
-use Keboola\Db\Import\Snowflake\Connection;
+use Doctrine\DBAL\Connection;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeExportAdapterInterface;
 use Keboola\Db\ImportExport\ExportOptions;
 use Keboola\Db\ImportExport\ExportOptionsInterface;
@@ -75,10 +75,10 @@ EOT,
             $exportOptions->isCompressed() ? "COMPRESSION='GZIP'" : "COMPRESSION='NONE'",
         );
 
-        $this->connection->query($sql, $source->getQueryBindings());
+        $this->connection->executeStatement($sql, $source->getQueryBindings());
 
         /** @var array<array{FILE_NAME: string, FILE_SIZE: string, ROW_COUNT: string}> $unloadedFiles */
-        $unloadedFiles = $this->connection->fetchAll('select * from table(result_scan(last_query_id()));');
+        $unloadedFiles = $this->connection->fetchAllAssociative('select * from table(result_scan(last_query_id()));');
 
         if ($exportOptions->generateManifest()) {
             (new Storage\S3\ManifestGenerator\S3SlicedManifestFromUnloadQueryResultGenerator($destination->getClient()))

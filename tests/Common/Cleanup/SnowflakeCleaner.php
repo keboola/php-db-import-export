@@ -6,6 +6,7 @@ namespace Tests\Keboola\Db\ImportExportCommon\Cleanup;
 
 use Doctrine\DBAL\Connection;
 use Keboola\TableBackendUtils\Connection\Snowflake\SnowflakeConnectionFactory;
+use Keboola\TableBackendUtils\Connection\Snowflake\SnowflakePrivateKey;
 use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 use Throwable;
 
@@ -42,7 +43,7 @@ final class SnowflakeCleaner
         $connection = SnowflakeConnectionFactory::getConnectionWithCert(
             (string) getenv('SNOWFLAKE_HOST'),
             (string) getenv('SNOWFLAKE_USER'),
-            self::normalizePrivateKey((string) getenv('SNOWFLAKE_PRIVATE_KEY')),
+            SnowflakePrivateKey::normalize((string) getenv('SNOWFLAKE_PRIVATE_KEY')),
             [
                 'port' => (string) getenv('SNOWFLAKE_PORT'),
                 'warehouse' => (string) getenv('SNOWFLAKE_WAREHOUSE'),
@@ -51,14 +52,6 @@ final class SnowflakeCleaner
         );
 
         return new self($connection);
-    }
-
-    private static function normalizePrivateKey(string $privateKey): string
-    {
-        $privateKey = trim($privateKey);
-        $privateKey = str_replace(["\r", "\n"], '', $privateKey);
-        $privateKey = wordwrap($privateKey, 64, "\n", true);
-        return "-----BEGIN PRIVATE KEY-----\n" . $privateKey . "\n-----END PRIVATE KEY-----\n";
     }
 
     public function cleanOlderThan(int $ttlSeconds): void
