@@ -47,9 +47,9 @@ final class FixturePath
     }
 
     /**
-     * Prefix that scopes a destructive operation. Without a run prefix the scope
-     * covers fixtures of every other run, so it is refused - a storage-specific
-     * segment such as AWS_S3_KEY is shared and does not make a scope safe.
+     * Prefix that scopes a destructive operation. It must be narrowed by
+     * BUILD_PREFIX or SUITE - a storage-specific segment such as AWS_S3_KEY is
+     * shared by every run and would let the caller clear the whole storage.
      */
     public static function requireScope(string $scope): string
     {
