@@ -47,12 +47,13 @@ final class FixturePath
     }
 
     /**
-     * Prefix that scopes a destructive operation. Empty means "the whole
-     * storage", which would wipe fixtures of every other run, so it is refused.
+     * Prefix that scopes a destructive operation. Without a run prefix the scope
+     * covers fixtures of every other run, so it is refused - a storage-specific
+     * segment such as AWS_S3_KEY is shared and does not make a scope safe.
      */
     public static function requireScope(string $scope): string
     {
-        if ($scope === '') {
+        if (self::prefix() === '') {
             throw new RuntimeException(
                 'Refusing to clear an unscoped storage. Set BUILD_PREFIX (and SUITE) to isolate this run.',
             );
