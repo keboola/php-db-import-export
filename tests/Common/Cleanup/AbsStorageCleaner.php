@@ -65,7 +65,8 @@ final class AbsStorageCleaner
                     printf("[cleanup:abs] skip %s: %s\n", $blob->getName(), $e->getMessage());
                 }
             }
-            $nextMarker = $result->getNextMarker();
+            // Azure returns null, not '', once the last page was listed.
+            $nextMarker = (string) $result->getNextMarker();
             $listOptions->setMarker($nextMarker);
         } while ($nextMarker !== '');
 
