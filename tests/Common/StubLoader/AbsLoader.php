@@ -6,10 +6,12 @@ namespace Tests\Keboola\Db\ImportExportCommon\StubLoader;
 
 use Keboola\FileStorage\Abs\ClientFactory;
 use MicrosoftAzure\Storage\Blob\BlobRestProxy;
+use MicrosoftAzure\Storage\Blob\Models\ListBlobsOptions;
 use MicrosoftAzure\Storage\Common\Exceptions\ServiceException;
 use MicrosoftAzure\Storage\Common\Internal\Resources;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo;
+use Tests\Keboola\Db\ImportExportCommon\FixturePath;
 use function GuzzleHttp\json_encode as guzzle_json_encode;
 
 class AbsLoader extends BaseStubLoader
@@ -50,6 +52,9 @@ class AbsLoader extends BaseStubLoader
                 if (preg_match('~The specified container is being deleted.~', $e->getMessage())) {
                     echo "Waiting, because old container is being deleted ... \n";
                     sleep(2);
+                } elseif (preg_match('~The specified container already exists~', $e->getMessage())) {
+                    echo "Container already exists \n";
+                    $created = true;
                 } else {
                     throw  $e;
                 }
@@ -68,18 +73,15 @@ class AbsLoader extends BaseStubLoader
         return $this->blobService;
     }
 
-    public function deleteContainer(): void
+    public function clearFixtures(): void
     {
-        try {
-            echo "Deleting a previous container \n";
-            $this->getBlobService()->deleteContainer($this->containerName);
-            sleep(1);
-        } catch (ServiceException $e) {
-            if (preg_match('~The specified container does not exist~', $e->getMessage())) {
-                echo "Container does not exists. Deleting skipped\n";
-            } else {
-                throw $e;
-            }
+        $prefix = FixturePath::requireScope($this->fixturePath());
+        echo sprintf("Clearing fixtures in %s/%s\n", $this->containerName, $prefix);
+        $listOptions = new ListBlobsOptions();
+        $listOptions->setPrefix($prefix);
+        $blobs = $this->getBlobService()->listBlobs($this->containerName, $listOptions);
+        foreach ($blobs->getBlobs() as $blob) {
+            $this->getBlobService()->deleteBlob($this->containerName, $blob->getName());
         }
     }
 
@@ -97,7 +99,7 @@ class AbsLoader extends BaseStubLoader
         foreach ($files as $file) {
             $promises[] = $this->getBlobService()->createBlockBlobAsync(
                 $this->containerName,
-                strtr($file->getPathname(), [self::BASE_DIR => '']),
+                $this->fixturePath(strtr($file->getPathname(), [self::BASE_DIR => ''])),
                 $file->getContents(),
             );
         }
@@ -105,16 +107,17 @@ class AbsLoader extends BaseStubLoader
         // invalid manifest
         $promises[] = $this->getBlobService()->createBlockBlobAsync(
             $this->containerName,
-            '02_tw_accounts.csv.invalid.manifest',
+            $this->fixturePath('02_tw_accounts.csv.invalid.manifest'),
             json_encode(
                 [
                 'entries' => [
                     [
                         'url' => sprintf(
-                            'azure://%s.%s/%s/not-exists.csv',
+                            'azure://%s.%s/%s/%snot-exists.csv',
                             $this->accountName,
                             Resources::BLOB_BASE_DNS_NAME,
                             $this->containerName,
+                            $this->fixturePath(),
                         ),
                         'mandatory' => true,
                     ],
@@ -148,10 +151,11 @@ class AbsLoader extends BaseStubLoader
             foreach ($files as $file) {
                 $manifest['entries'][] = [
                     'url' => sprintf(
-                        'azure://%s.%s/%s/sliced/%s/%s',
+                        'azure://%s.%s/%s/%ssliced/%s/%s',
                         $this->accountName,
                         Resources::BLOB_BASE_DNS_NAME,
                         $this->containerName,
+                        $this->fixturePath(),
                         $directory->getBasename(),
                         $file->getFilename(),
                     ),

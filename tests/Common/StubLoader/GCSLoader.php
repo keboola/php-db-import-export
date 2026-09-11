@@ -9,6 +9,7 @@ use React\Promise\Promise;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo;
 use Symfony\Component\Process\Process;
+use Tests\Keboola\Db\ImportExportCommon\FixturePath;
 use Throwable;
 use function React\Async\parallel;
 
@@ -60,16 +61,17 @@ class GCSLoader extends BaseStubLoader
         echo PHP_EOL;
     }
 
-    public function clearBucket(): void
+    public function clearFixtures(): void
     {
-        echo "Clear bucket \n";
+        $prefix = FixturePath::requireScope($this->fixturePath());
+        echo sprintf("Clearing fixtures in gs://%s/%s\n", $this->bucketName, $prefix);
         $p = new Process(
             [
                 'gsutil',
                 '-m',
                 'rm',
                 '-r',
-                'gs://' . $this->bucketName . '/*',
+                'gs://' . $this->bucketName . '/' . $prefix . '*',
             ],
         );
         $p->setTimeout(60 * 10 * 1000);
@@ -99,7 +101,7 @@ class GCSLoader extends BaseStubLoader
                 'cp',
                 '-r',
                 self::BASE_DIR . '/*',
-                'gs://' . $this->bucketName,
+                'gs://' . $this->bucketName . '/' . $this->fixturePath(),
             ],
             null,
             [
@@ -115,15 +117,16 @@ class GCSLoader extends BaseStubLoader
         $promises = [];
         $promises[] = fn() => new Promise(
             function ($resolve) use ($bucket) {
-                $blobName = '02_tw_accounts.csv.invalid.manifest';
+                $blobName = $this->fixturePath('02_tw_accounts.csv.invalid.manifest');
                 $res = $bucket->upload(
                     json_encode(
                         [
                             'entries' => [
                                 [
                                     'url' => sprintf(
-                                        'gs://%s/not-exists.csv',
+                                        'gs://%s/%snot-exists.csv',
                                         $this->bucketName,
+                                        $this->fixturePath(),
                                     ),
                                     'mandatory' => true,
                                 ],
@@ -168,8 +171,9 @@ class GCSLoader extends BaseStubLoader
             foreach ($files as $file) {
                 $manifest['entries'][] = [
                     'url' => sprintf(
-                        'gs://%s/sliced/%s/%s',
+                        'gs://%s/%ssliced/%s/%s',
                         $this->bucketName,
+                        $this->fixturePath(),
                         $directory->getBasename(),
                         $file->getFilename(),
                     ),

@@ -8,6 +8,7 @@ use Aws\S3\S3Client;
 use Aws\S3\Transfer;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo;
+use Tests\Keboola\Db\ImportExportCommon\FixturePath;
 use function GuzzleHttp\json_encode as guzzle_json_encode;
 
 class S3Loader extends BaseStubLoader
@@ -18,14 +19,11 @@ class S3Loader extends BaseStubLoader
 
     private S3Client $client;
 
-    private string $key;
-
     private string $path;
 
     public function __construct(
         string $region,
         string $bucket,
-        string $key,
     ) {
         $this->client = new S3Client([
             'region' => $region,
@@ -33,34 +31,19 @@ class S3Loader extends BaseStubLoader
             ],);
 
         $this->bucket = $bucket;
-        $this->key = $key;
-        $this->path = $this->bucket . '/' . ($this->key ? ($this->key . '/') : '');
+        $this->path = $this->bucket . '/' . $this->fixturePath();
     }
 
-    public function clearBucket(): void
+    protected function fixturePath(string $path = ''): string
     {
-        $result = $this->client->listObjects([
-            'Bucket' => $this->bucket,
-            'Prefix' => $this->key,
-            'Delimiter' => '/',
-            ],);
-        /** @var array<int, array{Key: string}>|null $objects */
-        $objects = $result->get('Contents');
-        if ($objects) {
-            $this->client->deleteObjects([
-                'Bucket' => $this->bucket,
-                'Delete' => [
-                    'Objects' => array_map(
-                        static function (array $object): array {
-                            return [
-                            'Key' => $object['Key'],
-                            ];
-                        },
-                        $objects,
-                    ),
-                ],
-                ],);
-        }
+        return FixturePath::inS3($path);
+    }
+
+    public function clearFixtures(): void
+    {
+        $prefix = FixturePath::requireScope($this->fixturePath());
+        echo sprintf("Clearing fixtures in s3://%s/%s\n", $this->bucket, $prefix);
+        $this->client->deleteMatchingObjects($this->bucket, $prefix);
     }
 
     public function load(): void
@@ -86,7 +69,7 @@ class S3Loader extends BaseStubLoader
 
         $this->client->putObject([
             'Bucket' => $this->bucket,
-            'Key' => ($this->key ? ($this->key . '/') : '') . '02_tw_accounts.csv.invalid.manifest',
+            'Key' => $this->fixturePath('02_tw_accounts.csv.invalid.manifest'),
             'Body' => json_encode([
                 'entries' => [
                     [

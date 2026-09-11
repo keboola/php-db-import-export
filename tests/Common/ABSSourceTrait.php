@@ -79,7 +79,7 @@ trait ABSSourceTrait
         }
         return new $class(
             (string) getenv('ABS_CONTAINER_NAME'),
-            $filePath,
+            FixturePath::in($filePath),
             static::getCredentialsForAzureContainer((string) getenv('ABS_CONTAINER_NAME')),
             (string) getenv('ABS_ACCOUNT_NAME'),
             $options,

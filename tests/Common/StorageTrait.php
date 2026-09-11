@@ -32,6 +32,7 @@ trait StorageTrait
     use ImportTrait;
     use ExportTrait;
 
+    // TODO: unused, consider removing
     protected function getBuildPrefix(): string
     {
         $buildPrefix = getenv('BUILD_PREFIX');
@@ -43,16 +44,10 @@ trait StorageTrait
 
     protected function getExportBlobDir(): string
     {
-        $path = '';
-        switch (getenv('STORAGE_TYPE')) {
-            case StorageType::STORAGE_S3:
-                $key = getenv('AWS_S3_KEY');
-                if ($key) {
-                    $path = $key . '/';
-                }
-        }
-
-        return $path . 'test_export';
+        return match (getenv('STORAGE_TYPE')) {
+            StorageType::STORAGE_S3 => FixturePath::inS3('test_export'),
+            default => FixturePath::in('test_export'),
+        };
     }
 
     protected function getDestinationInstance(

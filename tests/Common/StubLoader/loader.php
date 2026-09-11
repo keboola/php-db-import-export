@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 /**
- * Loads test fixtures into ABS
+ * Loads test fixtures into the file storage of the suite named by SUITE.
+ *
+ * Fixtures land under BUILD_PREFIX/SUITE so concurrent runs and suites sharing
+ * one bucket do not clear each other's files (see FixturePath).
  */
 
 use Tests\Keboola\Db\ImportExportCommon\StubLoader\AbsLoader;
@@ -26,8 +29,8 @@ switch ($argv[1]) {
             (string) getenv('ABS_ACCOUNT_NAME'),
             (string) getenv('ABS_CONTAINER_NAME'),
         );
-        $loader->deleteContainer();
         $loader->createContainer();
+        $loader->clearFixtures();
         $loader->load();
         break;
     case 's3':
@@ -36,9 +39,8 @@ switch ($argv[1]) {
         $loader = new S3Loader(
             (string) getenv('AWS_REGION'),
             (string) getenv('AWS_S3_BUCKET'),
-            (string) getenv('AWS_S3_KEY'),
         );
-        $loader->clearBucket();
+        $loader->clearFixtures();
         $loader->load();
         break;
     case 'gcs-snowflake':
@@ -63,7 +65,7 @@ switch ($argv[1]) {
             $credentials,
             (string) getenv('GCS_BUCKET_NAME'),
         );
-        $loader->clearBucket();
+        $loader->clearFixtures();
         $loader->load();
         break;
     case 'gcs-bigquery':
@@ -88,7 +90,7 @@ switch ($argv[1]) {
             $credentials,
             (string) getenv('BQ_BUCKET_NAME'),
         );
-        $loader->clearBucket();
+        $loader->clearFixtures();
         $loader->load();
         break;
     default:
