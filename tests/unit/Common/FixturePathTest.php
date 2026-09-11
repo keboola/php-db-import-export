@@ -64,6 +64,14 @@ class FixturePathTest extends TestCase
         self::assertSame('ci-123/', FixturePath::requireScope(FixturePath::in()));
     }
 
+    public function testRequireScopeAcceptsSuiteOnlyScope(): void
+    {
+        // The composer load scripts set SUITE only; BUILD_PREFIX is a CI addition.
+        putenv('SUITE=tests-snowflake');
+
+        self::assertSame('tests-snowflake/', FixturePath::requireScope(FixturePath::in()));
+    }
+
     public function testRequireScopeRefusesKeyOnlyScope(): void
     {
         putenv('AWS_S3_KEY=some-key');
