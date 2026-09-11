@@ -80,7 +80,7 @@ class S3Loader extends BaseStubLoader
                         'mandatory' => true,
                     ],
                 ],
-                ],),
+                ], JSON_THROW_ON_ERROR,),
             ],);
 
         echo "S3 load complete \n";
