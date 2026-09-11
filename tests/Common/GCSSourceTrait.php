@@ -82,7 +82,7 @@ trait GCSSourceTrait
 
         return new Storage\GCS\SourceFile(
             (string) getenv(static::getGCSBucketEnvName()), // @phpstan-ignore method.staticCall
-            $filePath,
+            FixturePath::in($filePath),
             (string) getenv('GCS_INTEGRATION_NAME'),
             static::getGCSCredentials(), // @phpstan-ignore method.staticCall
             $options,

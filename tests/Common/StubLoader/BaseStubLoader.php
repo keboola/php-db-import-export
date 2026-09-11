@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Keboola\Db\ImportExportCommon\StubLoader;
 
 use Symfony\Component\Finder\Finder;
+use Tests\Keboola\Db\ImportExportCommon\FixturePath;
 
 abstract class BaseStubLoader
 {
@@ -28,6 +29,17 @@ abstract class BaseStubLoader
     }
 
     abstract public function load(): void;
+
+    /**
+     * Removes only the fixtures of the current run, never the whole storage -
+     * concurrent runs read from the same bucket/container.
+     */
+    abstract public function clearFixtures(): void;
+
+    protected function fixturePath(string $path = ''): string
+    {
+        return FixturePath::in($path);
+    }
 
     public function generateLongCol(): void
     {
