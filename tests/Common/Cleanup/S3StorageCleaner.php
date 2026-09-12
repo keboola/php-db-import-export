@@ -48,7 +48,7 @@ final class S3StorageCleaner
             $objects = $page->get('Contents') ?? [];
             $staleKeys = [];
             foreach ($objects as $object) {
-                if (!StaleFixturePrefix::isFixtureOfSomeRun($object['Key'])) {
+                if (!StaleFixturePrefix::isS3FixtureOfSomeRun($object['Key'])) {
                     continue;
                 }
                 $lastModified = $object['LastModified'] ?? null;
