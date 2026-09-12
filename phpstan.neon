@@ -1,14 +1,15 @@
 parameters:
     reportUnmatchedIgnoredErrors: false
-    # Vendor PHPDoc overstates certainty (e.g. the Azure SDK declares non-nullable
-    # getters backed by untyped, null-initialised properties), so runtime guards
-    # against those values must not be reported as redundant.
-    treatPhpDocTypesAsCertain: false
     ignoreErrors:
         # Runtime type checks that PHPStan 2 considers redundant but are intentional
         - identifier: function.alreadyNarrowedType
         - identifier: staticMethod.alreadyNarrowedType
         - identifier: method.alreadyNarrowedType
+        # BlobProperties::getLastModified() is documented as \DateTime but is backed
+        # by an untyped, null-initialised property, so the null guard is not dead code.
+        -
+            identifier: identical.alwaysFalse
+            path: tests/Common/Cleanup/AbsStorageCleaner.php
         # Doctrine DBAL array type parameter mismatches
         -
             message: '#executeQuery\(\) expects array<int<0, max>\|string, mixed>#'
