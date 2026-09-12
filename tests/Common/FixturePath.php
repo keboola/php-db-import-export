@@ -55,7 +55,7 @@ final class FixturePath
     {
         if (self::prefix() === '') {
             throw new RuntimeException(
-                'Refusing to clear an unscoped storage. Set BUILD_PREFIX (and SUITE) to isolate this run.',
+                'Refusing to clear an unscoped storage. Set BUILD_PREFIX or SUITE to isolate this run.',
             );
         }
 
