@@ -94,5 +94,5 @@ switch ($argv[1]) {
         $loader->load();
         break;
     default:
-        throw new Exception('Only abs|s3 options are supported.');
+        throw new Exception('Only abs|s3|gcs-snowflake|gcs-bigquery options are supported.');
 }
