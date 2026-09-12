@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportUnit\Common;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Tests\Keboola\Db\ImportExportCommon\FixturePath;
@@ -86,5 +87,46 @@ class FixturePathTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Refusing to clear an unscoped storage.');
         FixturePath::requireScope(FixturePath::in());
+    }
+
+    /**
+     * @return iterable<string, array{0: string}>
+     */
+    public static function unsafeSegmentProvider(): iterable
+    {
+        yield 'glob star' => ['ci-*'];
+        yield 'glob question mark' => ['ci-?23'];
+        yield 'glob range' => ['ci-[0-9]'];
+        yield 'parent traversal' => ['ci-123/..'];
+        yield 'space' => ['ci 123'];
+        yield 'shell metacharacter' => ['ci-123;rm'];
+    }
+
+    #[DataProvider('unsafeSegmentProvider')]
+    public function testRejectsUnsafeBuildPrefix(string $value): void
+    {
+        putenv(sprintf('BUILD_PREFIX=%s', $value));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('BUILD_PREFIX must match');
+        FixturePath::prefix();
+    }
+
+    #[DataProvider('unsafeSegmentProvider')]
+    public function testRejectsUnsafeSuite(string $value): void
+    {
+        putenv(sprintf('SUITE=%s', $value));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('SUITE must match');
+        FixturePath::prefix();
+    }
+
+    public function testAcceptsNestedKeySegments(): void
+    {
+        putenv('AWS_S3_KEY=nested/key/path');
+        putenv('BUILD_PREFIX=ci-123');
+
+        self::assertSame('nested/key/path/ci-123/x.csv', FixturePath::inS3('x.csv'));
     }
 }

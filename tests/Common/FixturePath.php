@@ -20,6 +20,8 @@ use RuntimeException;
  */
 final class FixturePath
 {
+    private const SAFE_PART_PATTERN = '~^[A-Za-z0-9._-]+$~';
+
     public static function prefix(): string
     {
         $segments = array_filter([
@@ -62,8 +64,28 @@ final class FixturePath
         return $scope;
     }
 
+    /**
+     * The prefix is interpolated into a `gsutil rm` wildcard, so a glob
+     * character in it would clear other runs' fixtures.
+     */
     private static function segment(string $envName): string
     {
-        return trim((string) getenv($envName), " \t\n\r\0\x0B/");
+        $value = trim((string) getenv($envName), " \t\n\r\0\x0B/");
+        if ($value === '') {
+            return '';
+        }
+
+        foreach (explode('/', $value) as $part) {
+            if ($part === '.' || $part === '..' || preg_match(self::SAFE_PART_PATTERN, $part) !== 1) {
+                throw new RuntimeException(sprintf(
+                    '%s must match %s in every path part, "%s" given.',
+                    $envName,
+                    self::SAFE_PART_PATTERN,
+                    $value,
+                ));
+            }
+        }
+
+        return $value;
     }
 }
