@@ -64,11 +64,24 @@ final class S3StorageCleaner
             }
 
             try {
-                $this->client->deleteObjects([
+                $result = $this->client->deleteObjects([
                     'Bucket' => $this->bucket,
                     'Delete' => ['Objects' => $staleKeys],
                 ]);
-                $deleted += count($staleKeys);
+                // DeleteObjects answers 200 even when individual keys failed, so only
+                // the Deleted member tells how many objects actually went away.
+                /** @var array<int, array{Key?: string, Message?: string}> $errors */
+                $errors = $result->get('Errors') ?? [];
+                foreach ($errors as $error) {
+                    printf(
+                        "[cleanup:s3] skip %s: %s\n",
+                        $error['Key'] ?? '?',
+                        $error['Message'] ?? 'unknown error',
+                    );
+                }
+                /** @var array<int, array{Key?: string}> $deletedObjects */
+                $deletedObjects = $result->get('Deleted') ?? [];
+                $deleted += count($deletedObjects);
             } catch (Throwable $e) {
                 // Best effort - objects another run is deleting concurrently are fine to skip.
                 printf("[cleanup:s3] skip batch of %d: %s\n", count($staleKeys), $e->getMessage());

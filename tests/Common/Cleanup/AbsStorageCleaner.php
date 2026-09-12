@@ -52,8 +52,9 @@ final class AbsStorageCleaner
                     continue;
                 }
 
-                if ($blob->getProperties()->getLastModified()->getTimestamp() > $threshold) {
-                    // Too new - could belong to a live run, leave it alone.
+                $lastModified = $blob->getProperties()->getLastModified();
+                if ($lastModified === null || $lastModified->getTimestamp() > $threshold) {
+                    // Unknown age or too new - could belong to a live run, leave it alone.
                     continue;
                 }
 

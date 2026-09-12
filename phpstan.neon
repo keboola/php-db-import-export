@@ -1,5 +1,9 @@
 parameters:
     reportUnmatchedIgnoredErrors: false
+    # Vendor PHPDoc overstates certainty (e.g. the Azure SDK declares non-nullable
+    # getters backed by untyped, null-initialised properties), so runtime guards
+    # against those values must not be reported as redundant.
+    treatPhpDocTypesAsCertain: false
     ignoreErrors:
         # Runtime type checks that PHPStan 2 considers redundant but are intentional
         - identifier: function.alreadyNarrowedType
