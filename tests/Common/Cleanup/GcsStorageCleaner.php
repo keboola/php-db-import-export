@@ -47,15 +47,16 @@ final class GcsStorageCleaner
                 continue;
             }
 
-            $info = $object->info();
-            $updated = is_array($info) ? ($info['updated'] ?? null) : null;
-            $updatedAt = is_string($updated) ? strtotime($updated) : false;
-            if ($updatedAt === false || $updatedAt > $threshold) {
-                // Unknown age or too new - could belong to a live run, leave it alone.
-                continue;
-            }
-
             try {
+                // info() is a remote lookup, so it races with other reapers just like delete().
+                $info = $object->info();
+                $updated = is_array($info) ? ($info['updated'] ?? null) : null;
+                $updatedAt = is_string($updated) ? strtotime($updated) : false;
+                if ($updatedAt === false || $updatedAt > $threshold) {
+                    // Unknown age or too new - could belong to a live run, leave it alone.
+                    continue;
+                }
+
                 $object->delete();
                 $deleted++;
             } catch (Throwable $e) {
