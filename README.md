@@ -192,9 +192,11 @@ If you need GCS staging for Snowflake (not BigQuery), set up manually:
 ### Tests
 
 Fixtures live under `BUILD_PREFIX/SUITE` in the bucket or container, so several
-runs and suites share one storage without clearing each other's files. The
-composer scripts set `SUITE`; `BUILD_PREFIX` is set by CI to `ci-<run id>` and is
-normally empty locally. `composer clean-abs|clean-s3|clean-gcs-snowflake|clean-gcs-bigquery`
+runs and suites share one storage without clearing each other's files. On S3 that
+sits under `AWS_S3_KEY` when the key is configured, giving `AWS_S3_KEY/BUILD_PREFIX/SUITE`.
+The composer scripts set `SUITE`; `BUILD_PREFIX` is set by CI to `ci-<run id>` and is
+normally empty locally. Both must be plain path parts (`[A-Za-z0-9._-]`), because the
+prefix scopes a wildcard delete. `composer clean-abs|clean-s3|clean-gcs-snowflake|clean-gcs-bigquery`
 removes fixtures of runs older than `TEST_OBJECT_TTL_HOURS` (default 6).
 
 ```bash
