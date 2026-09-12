@@ -34,6 +34,7 @@ services:
       - BQ_KEY_FILE
       - BQ_BUCKET_NAME
       - SUITE
+      - TEST_OBJECT_TTL_HOURS
 
   ci:
     build:
@@ -70,3 +71,4 @@ services:
       - BQ_KEY_FILE
       - BQ_BUCKET_NAME
       - SUITE
+      - TEST_OBJECT_TTL_HOURS
