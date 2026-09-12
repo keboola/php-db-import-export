@@ -15,6 +15,7 @@ use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Tests\Keboola\Db\ImportExportCommon\Cleanup\AbsStorageCleaner;
+use Tests\Keboola\Db\ImportExportCommon\Cleanup\StaleFixturePrefix;
 
 class AbsStorageCleanerTest extends TestCase
 {
@@ -27,7 +28,11 @@ class AbsStorageCleanerTest extends TestCase
         $client = $this->createMock(BlobRestProxy::class);
         $client->expects(self::once())
             ->method('listBlobs')
-            ->with(self::CONTAINER, self::isInstanceOf(ListBlobsOptions::class))
+            ->with(
+                self::CONTAINER,
+                self::callback(static fn(ListBlobsOptions $options): bool
+                    => $options->getPrefix() === StaleFixturePrefix::RUN_PREFIX),
+            )
             ->willReturn($this->createListBlobsResult([$blob], null));
         $client->expects(self::once())
             ->method('deleteBlob')

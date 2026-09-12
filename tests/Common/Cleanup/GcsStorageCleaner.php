@@ -42,7 +42,7 @@ final class GcsStorageCleaner
 
         $deleted = 0;
         /** @var StorageObject $object */
-        foreach ($bucket->objects() as $object) {
+        foreach ($bucket->objects(['prefix' => StaleFixturePrefix::RUN_PREFIX]) as $object) {
             if (!StaleFixturePrefix::isFixtureOfSomeRun($object->name())) {
                 continue;
             }

@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Tests\Keboola\Db\ImportExportCommon\Cleanup\GcsStorageCleaner;
+use Tests\Keboola\Db\ImportExportCommon\Cleanup\StaleFixturePrefix;
 
 class GcsStorageCleanerTest extends TestCase
 {
@@ -122,8 +123,11 @@ class GcsStorageCleanerTest extends TestCase
     private function runCleaner(array $objects, int $ttlSeconds): string
     {
         // Pure stubs: nothing here needs call-count verification, only StorageObject::delete() does.
-        $bucket = $this->createStub(Bucket::class);
-        $bucket->method('objects')->willReturn($objects);
+        $bucket = $this->createMock(Bucket::class);
+        $bucket->expects(self::once())
+            ->method('objects')
+            ->with(['prefix' => StaleFixturePrefix::RUN_PREFIX])
+            ->willReturn($objects);
 
         $client = $this->createStub(StorageClient::class);
         $client->method('bucket')->willReturn($bucket);

@@ -42,7 +42,10 @@ final class S3StorageCleaner
         $threshold = time() - $ttlSeconds;
 
         $deleted = 0;
-        $paginator = $this->client->getPaginator('ListObjectsV2', ['Bucket' => $this->bucket]);
+        $paginator = $this->client->getPaginator('ListObjectsV2', [
+            'Bucket' => $this->bucket,
+            'Prefix' => StaleFixturePrefix::s3RunPrefix(),
+        ]);
         foreach ($paginator as $page) {
             /** @var array<int, array{Key: string, LastModified?: DateTimeInterface}> $objects */
             $objects = $page->get('Contents') ?? [];

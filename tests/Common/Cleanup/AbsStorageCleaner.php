@@ -44,6 +44,7 @@ final class AbsStorageCleaner
 
         $deleted = 0;
         $listOptions = new ListBlobsOptions();
+        $listOptions->setPrefix(StaleFixturePrefix::RUN_PREFIX);
         do {
             $result = $this->client->listBlobs($this->containerName, $listOptions);
             /** @var Blob $blob */

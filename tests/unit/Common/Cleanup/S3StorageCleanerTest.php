@@ -11,6 +11,7 @@ use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Tests\Keboola\Db\ImportExportCommon\Cleanup\S3StorageCleaner;
+use Tests\Keboola\Db\ImportExportCommon\Cleanup\StaleFixturePrefix;
 
 class S3StorageCleanerTest extends TestCase
 {
@@ -62,6 +63,35 @@ class S3StorageCleanerTest extends TestCase
             sprintf('[cleanup:s3] done, deleted 1 stale object(s) from %s', self::BUCKET),
             $output,
         );
+    }
+
+    public function testListingIsConstrainedToTheRunPrefixServerSide(): void
+    {
+        $handler = new MockHandler([
+            new Result(['Contents' => [], 'IsTruncated' => false]),
+        ]);
+        $client = $this->createClient($handler);
+
+        $this->runCleaner($client);
+
+        self::assertSame(
+            StaleFixturePrefix::RUN_PREFIX,
+            $handler->getLastCommand()->toArray()['Prefix'],
+        );
+    }
+
+    public function testListingPrefixIncludesTheConfiguredKeySubtree(): void
+    {
+        putenv('AWS_S3_KEY=some-key');
+
+        $handler = new MockHandler([
+            new Result(['Contents' => [], 'IsTruncated' => false]),
+        ]);
+        $client = $this->createClient($handler);
+
+        $this->runCleaner($client);
+
+        self::assertSame('some-key/' . StaleFixturePrefix::RUN_PREFIX, $handler->getLastCommand()->toArray()['Prefix']);
     }
 
     public function testLeavesFreshRunObjectAlone(): void

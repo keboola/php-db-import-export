@@ -14,6 +14,12 @@ final class StaleFixturePrefix
     private const RUN_PREFIX_PATTERN = '~^ci-\d+/~';
 
     /**
+     * Literal prefix every run's fixtures share, for server-side list filtering.
+     * The pattern above stays the authority on what may be deleted.
+     */
+    public const RUN_PREFIX = 'ci-';
+
+    /**
      * Matches fixtures written at the storage root - the ABS and GCS layout
      * (see FixturePath::in).
      */
@@ -29,16 +35,30 @@ final class StaleFixturePrefix
      */
     public static function isS3FixtureOfSomeRun(string $path): bool
     {
-        $key = trim((string) getenv('AWS_S3_KEY'), " \t\n\r\0\x0B/");
-        if ($key === '') {
+        $subtree = self::s3Subtree();
+        if ($subtree === '') {
             return self::isFixtureOfSomeRun($path);
         }
 
-        $subtree = $key . '/';
         if (!str_starts_with($path, $subtree)) {
             return false;
         }
 
         return self::isFixtureOfSomeRun(substr($path, strlen($subtree)));
+    }
+
+    /**
+     * Literal S3 prefix every run's fixtures share, for server-side list filtering.
+     */
+    public static function s3RunPrefix(): string
+    {
+        return self::s3Subtree() . self::RUN_PREFIX;
+    }
+
+    private static function s3Subtree(): string
+    {
+        $key = trim((string) getenv('AWS_S3_KEY'), " \t\n\r\0\x0B/");
+
+        return $key === '' ? '' : $key . '/';
     }
 }
