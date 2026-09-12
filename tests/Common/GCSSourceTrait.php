@@ -63,7 +63,7 @@ trait GCSSourceTrait
     }
 
     /**
-     * filePath is expected without AWS_GCS_KEY
+     * filePath is expected relative to the fixture root (see FixturePath)
      *
      * @param string[] $columns
      * @param string[]|null $primaryKeys
