@@ -717,7 +717,7 @@ SQL,
     }
 
     /**
-     * @return Generator<string, array{string[], string}>
+     * @return Generator<string, array{string[], BigqueryImportOptions::USING_TYPES_*}>
      */
     public static function partitionAwareImportProvider(): Generator
     {
@@ -738,6 +738,7 @@ SQL,
      * after the import must be the same with it off, on, and on but above the threshold.
      *
      * @param string[] $features
+     * @param BigqueryImportOptions::USING_TYPES_* $usingTypes
      */
     #[DataProvider('partitionAwareImportProvider')]
     public function testPartitionAwareImportKeepsIncrementalImportResult(array $features, string $usingTypes): void

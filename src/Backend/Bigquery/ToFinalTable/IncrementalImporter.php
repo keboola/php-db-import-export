@@ -21,6 +21,7 @@ use Keboola\TableBackendUtils\Connection\Bigquery\SessionFactory;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableDefinition;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableReflection;
 use Keboola\TableBackendUtils\Table\TableDefinitionInterface;
+use LogicException;
 use Throwable;
 
 final class IncrementalImporter implements ToFinalTableImporterInterface
@@ -273,7 +274,11 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         $values = [];
         foreach ($result as $row) {
             assert(is_array($row));
-            $values[] = (string) $row[SqlBuilder::PARTITION_VALUE_ALIAS];
+            $value = $row[SqlBuilder::PARTITION_VALUE_ALIAS] ?? null;
+            if (!is_string($value)) {
+                throw new LogicException('Distinct partition value query must return STRING values.');
+            }
+            $values[] = $value;
         }
 
         return PartitionAwareImportFilter::fromDistinctValues(
