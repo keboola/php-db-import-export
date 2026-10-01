@@ -10,6 +10,8 @@ use Generator;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryImportOptions;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\FullImporter;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\IncrementalImporter;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportColumn;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportFilter;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\SqlBuilder;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToStage\StageTableDefinitionFactory;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToStage\ToStageImporter;
@@ -815,5 +817,126 @@ SQL,
         self::assertSame($expected, $rowsByRun['off']);
         self::assertSame($expected, $rowsByRun['on']);
         self::assertSame($expected, $rowsByRun['above threshold']);
+    }
+
+    /**
+     * Guards that the rendered filter is one BigQuery can prune on (bare column, typed literals), which
+     * SQL-text assertions cannot prove: a CAST(dest.col AS STRING) or IN (SELECT ...) filter reads every partition.
+     */
+    public function testPartitionAwareImportFilterPrunesDestinationPartitions(): void
+    {
+        $destinationTable = sprintf(
+            '%s.`partitioned_dest`',
+            BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+        );
+        $sourceTable = sprintf('%s.`source`', BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName()));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s (`id` STRING NOT NULL, `day` DATE NOT NULL, `value` STRING) PARTITION BY `day`',
+            $destinationTable,
+        )));
+        // 60 daily partitions with 20 rows each
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'INSERT INTO %s (`id`, `day`, `value`)'
+            . ' SELECT CONCAT(\'row-\', CAST(d AS STRING), \'-\', CAST(n AS STRING)),'
+            . ' DATE_ADD(DATE \'2024-01-01\', INTERVAL d DAY), REPEAT(\'x\', 100)'
+            . ' FROM UNNEST(GENERATE_ARRAY(0, 59)) AS d, UNNEST(GENERATE_ARRAY(1, 20)) AS n',
+            $destinationTable,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s (`id` STRING, `day` DATE, `value` STRING)',
+            $sourceTable,
+        )));
+        // updates for 2 of the 60 days
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'INSERT INTO %s (`id`, `day`, `value`)'
+            . ' SELECT CONCAT(\'row-\', CAST(d AS STRING), \'-\', CAST(n AS STRING)),'
+            . ' DATE_ADD(DATE \'2024-01-01\', INTERVAL d DAY), \'updated\''
+            . ' FROM UNNEST([10, 11]) AS d, UNNEST(GENERATE_ARRAY(1, 3)) AS n',
+            $sourceTable,
+        )));
+
+        $destinationReflection = new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getDestinationDbName(),
+            'partitioned_dest',
+        );
+        $destination = $destinationReflection->getTableDefinition();
+        assert($destination instanceof BigqueryTableDefinition);
+        $destination = $this->cloneDefinitionWithDedupCol($destination, ['id', 'day']);
+        $source = (new BigqueryTableReflection($this->bqClient, $this->getSourceDbName(), 'source'))
+            ->getTableDefinition();
+        assert($source instanceof BigqueryTableDefinition);
+
+        $sqlBuilder = new SqlBuilder();
+        $column = PartitionAwareImportColumn::fromDestination(
+            $destinationReflection->getPartitioningConfiguration(),
+            $destination,
+        );
+        self::assertNotNull($column);
+        $values = [];
+        $result = $this->bqClient->runQuery($this->bqClient->query(
+            $sqlBuilder->getSelectDistinctPartitionValuesCommand($source, $column, 1001),
+        ));
+        foreach ($result as $row) {
+            assert(is_array($row));
+            $value = $row[SqlBuilder::PARTITION_VALUE_ALIAS] ?? null;
+            if (!is_string($value)) {
+                self::fail('Distinct partition value query must return STRING values.');
+            }
+            $values[] = $value;
+        }
+        $filter = PartitionAwareImportFilter::fromDistinctValues($column, $values, 1000);
+        self::assertNotNull($filter);
+        self::assertSame(['2024-01-11', '2024-01-12'], $filter->values);
+
+        $options = new BigqueryImportOptions(isIncremental: true, usingTypes: BigqueryImportOptions::USING_TYPES_USER);
+        $timestamp = '2024-01-01 00:00:00';
+        $statements = [
+            'MERGE' => static fn(?PartitionAwareImportFilter $f) => $sqlBuilder->getMergeCommand(
+                $source,
+                $destination,
+                $options,
+                $timestamp,
+                $f,
+            ),
+            'UPDATE' => static fn(?PartitionAwareImportFilter $f) => $sqlBuilder->getUpdateWithPkCommand(
+                $source,
+                $destination,
+                $options,
+                $timestamp,
+                $f,
+            ),
+            'DELETE' => static fn(?PartitionAwareImportFilter $f) => $sqlBuilder->getDeleteOldItemsCommand(
+                $source,
+                $destination,
+                $options,
+                $f,
+            ),
+        ];
+        foreach ($statements as $name => $buildSql) {
+            $unfiltered = $this->getDryRunBytesProcessed($buildSql(null));
+            $filtered = $this->getDryRunBytesProcessed($buildSql($filter));
+            // pruned reads 2 of 60 equally sized partitions (~30x less) plus the small source; 10x leaves margin
+            self::assertGreaterThan(0, $filtered, $name);
+            self::assertLessThanOrEqual(
+                intdiv($unfiltered, 10),
+                $filtered,
+                sprintf('%s: filtered %d bytes, unfiltered %d bytes', $name, $filtered, $unfiltered),
+            );
+        }
+    }
+
+    private function getDryRunBytesProcessed(string $sql): int
+    {
+        // dry run only plans the statement: no data change, nothing billed
+        $query = $this->bqClient->query($sql);
+        $query->dryRun(true);
+        $job = $this->bqClient->startQuery($query);
+        $statistics = $job->info()['statistics'] ?? null;
+        $bytes = is_array($statistics) ? ($statistics['totalBytesProcessed'] ?? null) : null;
+        if (!is_numeric($bytes)) {
+            self::fail('Dry run returned no totalBytesProcessed for: ' . $sql);
+        }
+        return (int) $bytes;
     }
 }
