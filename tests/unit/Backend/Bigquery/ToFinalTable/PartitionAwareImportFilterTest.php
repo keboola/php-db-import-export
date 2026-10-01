@@ -73,14 +73,20 @@ class PartitionAwareImportFilterTest extends TestCase
             self::destination(['id', 'ts']),
         );
         self::assertNotNull($time);
-        self::assertSame(['ts', Bigquery::TYPE_TIMESTAMP, 'HOUR'], [$time->columnName, $time->type, $time->granularity]);
+        self::assertSame(
+            ['ts', Bigquery::TYPE_TIMESTAMP, 'HOUR'],
+            [$time->columnName, $time->type, $time->granularity],
+        );
 
         $range = PartitionAwareImportColumn::fromDestination(
             new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '10'), false),
             self::destination(['id', 'bucket']),
         );
         self::assertNotNull($range);
-        self::assertSame(['bucket', Bigquery::TYPE_INT64, null], [$range->columnName, $range->type, $range->granularity]);
+        self::assertSame(
+            ['bucket', Bigquery::TYPE_INT64, null],
+            [$range->columnName, $range->type, $range->granularity],
+        );
     }
 
     public function testFilterIsDroppedAboveThresholdAndKeptAtIt(): void

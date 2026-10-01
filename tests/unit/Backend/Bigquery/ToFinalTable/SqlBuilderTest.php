@@ -370,8 +370,11 @@ class SqlBuilderTest extends TestCase
         return $filter;
     }
 
-    private static function partitionedTable(string $schema, string $tableName, string $partitionColumn): BigqueryTableDefinition
-    {
+    private static function partitionedTable(
+        string $schema,
+        string $tableName,
+        string $partitionColumn,
+    ): BigqueryTableDefinition {
         return new BigqueryTableDefinition($schema, $tableName, false, new ColumnCollection([
             new BigqueryColumn('id', new Bigquery(Bigquery::TYPE_STRING)),
             new BigqueryColumn('day', new Bigquery(Bigquery::TYPE_DATE)),
@@ -405,24 +408,26 @@ class SqlBuilderTest extends TestCase
         );
         $builder = $this->getInstance();
 
-        $pk = '`dest`.`id` = COALESCE(`src`.`id`, \'\') AND CAST(`dest`.`day` AS STRING) = COALESCE(`src`.`day`, \'\') ';
+        $pk = '`dest`.`id` = COALESCE(`src`.`id`, \'\') '
+            . 'AND CAST(`dest`.`day` AS STRING) = COALESCE(`src`.`day`, \'\') ';
         $prune = '`dest`.`day` IN (DATE \'2024-01-01\', DATE \'2024-01-02\')';
         $set = '`id` = COALESCE(`src`.`id`, \'\'), `day` = CAST(COALESCE(`src`.`day`, \'\') AS DATE), '
             . '`name` = COALESCE(`src`.`name`, \'\')';
-        $compare = '`dest`.`id` != COALESCE(`src`.`id`, \'\') OR CAST(`dest`.`day` AS STRING) != COALESCE(`src`.`day`, \'\') '
+        $compare = '`dest`.`id` != COALESCE(`src`.`id`, \'\') '
+            . 'OR CAST(`dest`.`day` AS STRING) != COALESCE(`src`.`day`, \'\') '
             . 'OR `dest`.`name` != COALESCE(`src`.`name`, \'\')';
 
-        $deleteWithout = 'DELETE `in.c-main`.`dedup` AS `src` WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` WHERE '
-            . $pk . ')';
+        $deleteWithout = 'DELETE `in.c-main`.`dedup` AS `src` '
+            . 'WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` WHERE ' . $pk . ')';
         self::assertSame($deleteWithout, $builder->getDeleteOldItemsCommand($dedup, $destination, $options));
         self::assertSame(
-            'DELETE `in.c-main`.`dedup` AS `src` WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` WHERE '
-            . $pk . 'AND ' . $prune . ' )',
+            'DELETE `in.c-main`.`dedup` AS `src` '
+            . 'WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` WHERE ' . $pk . 'AND ' . $prune . ' )',
             $builder->getDeleteOldItemsCommand($dedup, $destination, $options, $filter),
         );
 
-        $updateWithout = 'UPDATE `out.c-main`.`dest` AS `dest` SET ' . $set . ' FROM `in.c-main`.`dedup` AS `src` WHERE '
-            . $pk . ' AND (' . $compare . ')';
+        $updateWithout = 'UPDATE `out.c-main`.`dest` AS `dest` SET ' . $set
+            . ' FROM `in.c-main`.`dedup` AS `src` WHERE ' . $pk . ' AND (' . $compare . ')';
         self::assertSame($updateWithout, $builder->getUpdateWithPkCommand($dedup, $destination, $options, 'ts'));
         self::assertSame(
             $updateWithout . ' AND ' . $prune,
@@ -472,14 +477,17 @@ class SqlBuilderTest extends TestCase
             'ts',
             $time('DAY', 'ts'),
             ['2024-01-03', '2024-01-01'],
-            '((`dest`.`ts` >= TIMESTAMP \'2024-01-01 00:00:00+00\' AND `dest`.`ts` < TIMESTAMP \'2024-01-02 00:00:00+00\')'
-            . ' OR (`dest`.`ts` >= TIMESTAMP \'2024-01-03 00:00:00+00\' AND `dest`.`ts` < TIMESTAMP \'2024-01-04 00:00:00+00\'))',
+            '((`dest`.`ts` >= TIMESTAMP \'2024-01-01 00:00:00+00\''
+            . ' AND `dest`.`ts` < TIMESTAMP \'2024-01-02 00:00:00+00\')'
+            . ' OR (`dest`.`ts` >= TIMESTAMP \'2024-01-03 00:00:00+00\''
+            . ' AND `dest`.`ts` < TIMESTAMP \'2024-01-04 00:00:00+00\'))',
         ];
         yield 'timestamp, hour' => [
             'ts',
             $time('HOUR', 'ts'),
             ['2024-01-01 23'],
-            '((`dest`.`ts` >= TIMESTAMP \'2024-01-01 23:00:00+00\' AND `dest`.`ts` < TIMESTAMP \'2024-01-02 00:00:00+00\'))',
+            '((`dest`.`ts` >= TIMESTAMP \'2024-01-01 23:00:00+00\''
+            . ' AND `dest`.`ts` < TIMESTAMP \'2024-01-02 00:00:00+00\'))',
         ];
         yield 'datetime, month' => [
             'dt',
@@ -542,7 +550,11 @@ class SqlBuilderTest extends TestCase
             $time('HOUR', 'ts'),
             'FORMAT_TIMESTAMP(\'%E4Y-%m-%d %H\', SAFE_CAST(`ts` AS TIMESTAMP), \'UTC\')',
         ];
-        yield 'datetime, month' => ['dt', $time('MONTH', 'dt'), 'FORMAT_DATETIME(\'%E4Y-%m\', SAFE_CAST(`dt` AS DATETIME))'];
+        yield 'datetime, month' => [
+            'dt',
+            $time('MONTH', 'dt'),
+            'FORMAT_DATETIME(\'%E4Y-%m\', SAFE_CAST(`dt` AS DATETIME))',
+        ];
         yield 'integer range' => [
             'bucket',
             new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '10'), false),

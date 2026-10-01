@@ -276,6 +276,10 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
             $values[] = (string) $row[SqlBuilder::PARTITION_VALUE_ALIAS];
         }
 
-        return PartitionAwareImportFilter::fromDistinctValues($column, $values, $options->partitionAwareImportMaxValues);
+        return PartitionAwareImportFilter::fromDistinctValues(
+            $column,
+            $values,
+            $options->partitionAwareImportMaxValues,
+        );
     }
 }
