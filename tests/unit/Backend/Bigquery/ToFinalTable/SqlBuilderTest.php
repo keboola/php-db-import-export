@@ -7,8 +7,8 @@ namespace Tests\Keboola\Db\ImportExportUnit\Backend\Bigquery\ToFinalTable;
 use Generator;
 use Keboola\Datatype\Definition\Bigquery;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryImportOptions;
-use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionPruningColumn;
-use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionPruningFilter;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportColumn;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportFilter;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\SqlBuilder;
 use Keboola\Db\ImportExport\Backend\TimestampMode;
 use Keboola\TableBackendUtils\Column\Bigquery\BigqueryColumn;
@@ -362,10 +362,10 @@ class SqlBuilderTest extends TestCase
         BigqueryTableDefinition $destination,
         PartitioningConfig $partitioning,
         array $values,
-    ): PartitionPruningFilter {
-        $column = PartitionPruningColumn::fromDestination($partitioning, $destination);
+    ): PartitionAwareImportFilter {
+        $column = PartitionAwareImportColumn::fromDestination($partitioning, $destination);
         self::assertNotNull($column);
-        $filter = PartitionPruningFilter::fromDistinctValues($column, $values, 1000);
+        $filter = PartitionAwareImportFilter::fromDistinctValues($column, $values, 1000);
         self::assertNotNull($filter);
         return $filter;
     }
@@ -556,7 +556,7 @@ class SqlBuilderTest extends TestCase
         PartitioningConfig $partitioning,
         string $expectedValueSql,
     ): void {
-        $column = PartitionPruningColumn::fromDestination(
+        $column = PartitionAwareImportColumn::fromDestination(
             $partitioning,
             self::partitionedTable('out.c-main', 'dest', $partitionColumn),
         );

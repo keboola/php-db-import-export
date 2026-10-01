@@ -103,7 +103,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                 $dedupRowCount = $bigqueryTableReflection->getRowsCount();
                 $state->setImportedRowsCount($dedupRowCount);
 
-                $partitionPruningFilter = $this->resolvePartitionPruningFilter(
+                $partitionAwareImportFilter = $this->resolvePartitionAwareImportFilter(
                     $deduplicationTableDefinition,
                     $destinationTableDefinition,
                     $options,
@@ -121,7 +121,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                                 $destinationTableDefinition,
                                 $options,
                                 $this->timestamp,
-                                $partitionPruningFilter,
+                                $partitionAwareImportFilter,
                             ),
                             $session->getAsQueryOptions(),
                         ),
@@ -146,7 +146,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                                 $destinationTableDefinition,
                                 $options,
                                 $this->timestamp,
-                                $partitionPruningFilter,
+                                $partitionAwareImportFilter,
                             ),
                             $session->getAsQueryOptions(),
                         ),
@@ -161,7 +161,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                                 $deduplicationTableDefinition,
                                 $destinationTableDefinition,
                                 $options,
-                                $partitionPruningFilter,
+                                $partitionAwareImportFilter,
                             ),
                             $session->getAsQueryOptions(),
                         ),
@@ -238,16 +238,16 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         return $state->getResult();
     }
 
-    private function resolvePartitionPruningFilter(
+    private function resolvePartitionAwareImportFilter(
         BigqueryTableDefinition $deduplicationTableDefinition,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $options,
         Session $session,
-    ): ?PartitionPruningFilter {
-        if (!$options->partitionPruning || $options->partitionPruningMaxValues === null) {
+    ): ?PartitionAwareImportFilter {
+        if (!$options->partitionAwareImport || $options->partitionAwareImportMaxValues === null) {
             return null;
         }
-        $column = PartitionPruningColumn::fromDestination(
+        $column = PartitionAwareImportColumn::fromDestination(
             (new BigqueryTableReflection(
                 $this->bqClient,
                 $destinationTableDefinition->getSchemaName(),
@@ -265,7 +265,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                 $this->sqlBuilder->getSelectDistinctPartitionValuesCommand(
                     $deduplicationTableDefinition,
                     $column,
-                    $options->partitionPruningMaxValues + 1,
+                    $options->partitionAwareImportMaxValues + 1,
                 ),
                 $session->getAsQueryOptions(),
             ),
@@ -276,6 +276,6 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
             $values[] = (string) $row[SqlBuilder::PARTITION_VALUE_ALIAS];
         }
 
-        return PartitionPruningFilter::fromDistinctValues($column, $values, $options->partitionPruningMaxValues);
+        return PartitionAwareImportFilter::fromDistinctValues($column, $values, $options->partitionAwareImportMaxValues);
     }
 }

@@ -719,7 +719,7 @@ SQL,
     /**
      * @return Generator<string, array{string[], string}>
      */
-    public static function partitionPruningProvider(): Generator
+    public static function partitionAwareImportProvider(): Generator
     {
         yield 'legacy, typed source' => [[], BigqueryImportOptions::USING_TYPES_USER];
         yield 'optimized, typed source' => [
@@ -734,13 +734,13 @@ SQL,
     }
 
     /**
-     * Partition pruning only narrows which destination partitions the PK join reads; the rows
+     * Partition-aware import only narrows which destination partitions the PK join reads; the rows
      * after the import must be the same with it off, on, and on but above the threshold.
      *
      * @param string[] $features
      */
-    #[DataProvider('partitionPruningProvider')]
-    public function testPartitionPruningKeepsIncrementalImportResult(array $features, string $usingTypes): void
+    #[DataProvider('partitionAwareImportProvider')]
+    public function testPartitionAwareImportKeepsIncrementalImportResult(array $features, string $usingTypes): void
     {
         $sourceDayType = $usingTypes === BigqueryImportOptions::USING_TYPES_USER ? 'DATE' : 'STRING';
         $this->bqClient->runQuery($this->bqClient->query(sprintf(
@@ -791,8 +791,8 @@ SQL,
                     isIncremental: true,
                     usingTypes: $usingTypes,
                     features: $features,
-                    partitionPruning: $maxValues !== null,
-                    partitionPruningMaxValues: $maxValues,
+                    partitionAwareImport: $maxValues !== null,
+                    partitionAwareImportMaxValues: $maxValues,
                 ),
                 new ImportState($tableName),
             );

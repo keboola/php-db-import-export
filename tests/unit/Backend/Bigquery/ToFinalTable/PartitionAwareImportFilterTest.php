@@ -8,8 +8,8 @@ use Generator;
 use InvalidArgumentException;
 use Keboola\Datatype\Definition\Bigquery;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryImportOptions;
-use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionPruningColumn;
-use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionPruningFilter;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportColumn;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportFilter;
 use Keboola\TableBackendUtils\Column\Bigquery\BigqueryColumn;
 use Keboola\TableBackendUtils\Column\ColumnCollection;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableDefinition;
@@ -20,7 +20,7 @@ use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-class PartitionPruningFilterTest extends TestCase
+class PartitionAwareImportFilterTest extends TestCase
 {
     /**
      * @param string[] $primaryKeys
@@ -63,19 +63,19 @@ class PartitionPruningFilterTest extends TestCase
         ?PartitioningConfig $partitioning,
         array $primaryKeys,
     ): void {
-        self::assertNull(PartitionPruningColumn::fromDestination($partitioning, self::destination($primaryKeys)));
+        self::assertNull(PartitionAwareImportColumn::fromDestination($partitioning, self::destination($primaryKeys)));
     }
 
     public function testColumnResolvesTypeAndGranularityFromDestination(): void
     {
-        $time = PartitionPruningColumn::fromDestination(
+        $time = PartitionAwareImportColumn::fromDestination(
             self::timePartitioning('HOUR', 'ts'),
             self::destination(['id', 'ts']),
         );
         self::assertNotNull($time);
         self::assertSame(['ts', Bigquery::TYPE_TIMESTAMP, 'HOUR'], [$time->columnName, $time->type, $time->granularity]);
 
-        $range = PartitionPruningColumn::fromDestination(
+        $range = PartitionAwareImportColumn::fromDestination(
             new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '10'), false),
             self::destination(['id', 'bucket']),
         );
@@ -85,36 +85,36 @@ class PartitionPruningFilterTest extends TestCase
 
     public function testFilterIsDroppedAboveThresholdAndKeptAtIt(): void
     {
-        $column = PartitionPruningColumn::fromDestination(
+        $column = PartitionAwareImportColumn::fromDestination(
             self::timePartitioning('DAY', 'day'),
             self::destination(['id', 'day']),
         );
         self::assertNotNull($column);
         $values = ['2024-01-03', '2024-01-01', '2024-01-02'];
 
-        self::assertNull(PartitionPruningFilter::fromDistinctValues($column, $values, 2));
-        self::assertNull(PartitionPruningFilter::fromDistinctValues($column, [], 2));
+        self::assertNull(PartitionAwareImportFilter::fromDistinctValues($column, $values, 2));
+        self::assertNull(PartitionAwareImportFilter::fromDistinctValues($column, [], 2));
 
-        $filter = PartitionPruningFilter::fromDistinctValues($column, $values, 3);
+        $filter = PartitionAwareImportFilter::fromDistinctValues($column, $values, 3);
         self::assertNotNull($filter);
         self::assertSame(['2024-01-01', '2024-01-02', '2024-01-03'], $filter->values);
     }
 
     public function testFilterRejectsValueThatIsNotAPartitionValue(): void
     {
-        $column = PartitionPruningColumn::fromDestination(
+        $column = PartitionAwareImportColumn::fromDestination(
             self::timePartitioning('DAY', 'day'),
             self::destination(['id', 'day']),
         );
         self::assertNotNull($column);
 
         $this->expectException(LogicException::class);
-        PartitionPruningFilter::fromDistinctValues($column, ["2024-01-01') OR (TRUE"], 10);
+        PartitionAwareImportFilter::fromDistinctValues($column, ["2024-01-01') OR (TRUE"], 10);
     }
 
     public function testOptionsRequireThresholdWhenPruningIsRequested(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        new BigqueryImportOptions(isIncremental: true, partitionPruning: true);
+        new BigqueryImportOptions(isIncremental: true, partitionAwareImport: true);
     }
 }

@@ -33,12 +33,12 @@ class BigqueryImportOptions extends ImportOptions
         array $importAsNull = self::DEFAULT_IMPORT_AS_NULL,
         array $features = [],
         public readonly TimestampMode $timestampMode = TimestampMode::CurrentTime,
-        public readonly bool $partitionPruning = false,
-        public readonly ?int $partitionPruningMaxValues = null,
+        public readonly bool $partitionAwareImport = false,
+        public readonly ?int $partitionAwareImportMaxValues = null,
     ) {
-        if ($partitionPruning && ($partitionPruningMaxValues === null || $partitionPruningMaxValues < 1)) {
+        if ($partitionAwareImport && ($partitionAwareImportMaxValues === null || $partitionAwareImportMaxValues < 1)) {
             throw new InvalidArgumentException(
-                'Partition pruning requires a positive partitionPruningMaxValues threshold.',
+                'Partition-aware import requires a positive partitionAwareImportMaxValues threshold.',
             );
         }
         parent::__construct(

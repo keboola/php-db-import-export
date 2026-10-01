@@ -48,10 +48,10 @@ class SqlBuilder
 
     // BigQuery format element => PHP format parsing it back; %E4Y keeps years zero-padded to 4 digits
     private const PARTITION_UNIT_FORMATS = [
-        PartitionPruningColumn::GRANULARITY_HOUR => ['%E4Y-%m-%d %H', '!Y-m-d H', '+1 hour'],
-        PartitionPruningColumn::GRANULARITY_DAY => ['%E4Y-%m-%d', '!Y-m-d', '+1 day'],
-        PartitionPruningColumn::GRANULARITY_MONTH => ['%E4Y-%m', '!Y-m', '+1 month'],
-        PartitionPruningColumn::GRANULARITY_YEAR => ['%E4Y', '!Y', '+1 year'],
+        PartitionAwareImportColumn::GRANULARITY_HOUR => ['%E4Y-%m-%d %H', '!Y-m-d H', '+1 hour'],
+        PartitionAwareImportColumn::GRANULARITY_DAY => ['%E4Y-%m-%d', '!Y-m-d', '+1 day'],
+        PartitionAwareImportColumn::GRANULARITY_MONTH => ['%E4Y-%m', '!Y-m', '+1 month'],
+        PartitionAwareImportColumn::GRANULARITY_YEAR => ['%E4Y', '!Y', '+1 year'],
     ];
 
     private function assertColumnExist(
@@ -314,7 +314,7 @@ SQL,
         BigqueryTableDefinition $stagingTableDefinition,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $importOptions,
-        ?PartitionPruningFilter $partitionPruningFilter = null,
+        ?PartitionAwareImportFilter $partitionAwareImportFilter = null,
     ): string {
         $stagingTable = sprintf(
             '%s.%s',
@@ -337,7 +337,7 @@ SQL,
                 $importOptions,
                 $destinationTableDefinition,
             ),
-            $this->getPartitionPruningConjunct($partitionPruningFilter),
+            $this->getPartitionAwareImportConjunct($partitionAwareImportFilter),
         );
     }
 
@@ -475,7 +475,7 @@ SQL,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $importOptions,
         string $timestampValue,
-        ?PartitionPruningFilter $partitionPruningFilter = null,
+        ?PartitionAwareImportFilter $partitionAwareImportFilter = null,
     ): string {
         $columnsSet = $this->getColumnsSetForUpdate(
             $stagingTableDefinition,
@@ -507,9 +507,9 @@ SQL,
                 $destinationTableDefinition,
             ),
             implode(' OR ', $columnsComparisonSql),
-            $partitionPruningFilter === null
+            $partitionAwareImportFilter === null
                 ? ''
-                : ' AND ' . $this->getPartitionPruningCondition($partitionPruningFilter),
+                : ' AND ' . $this->getPartitionAwareImportCondition($partitionAwareImportFilter),
         );
     }
 
@@ -524,7 +524,7 @@ SQL,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $importOptions,
         string $timestampValue,
-        ?PartitionPruningFilter $partitionPruningFilter = null,
+        ?PartitionAwareImportFilter $partitionAwareImportFilter = null,
     ): string {
         $columnsSet = $this->getColumnsSetForUpdate(
             $stagingTableDefinition,
@@ -568,7 +568,7 @@ SQL,
                 $importOptions,
                 $destinationTableDefinition,
             ),
-            $this->getPartitionPruningConjunct($partitionPruningFilter),
+            $this->getPartitionAwareImportConjunct($partitionAwareImportFilter),
             implode(' OR ', $columnsComparisonSql),
             implode(', ', $columnsSet),
             $this->getColumnsString($insertColumns),
@@ -767,13 +767,13 @@ SQL,
     }
 
     /**
-     * Distinct partition units of the whole source table, formatted as PartitionPruningFilter expects.
+     * Distinct partition units of the whole source table, formatted as PartitionAwareImportFilter expects.
      * SAFE_CAST: string-table sources hold the canonical text of the typed destination value; text that
      * fails to cast cannot equal CAST(dest AS STRING) in the PK join, so dropping it loses no match.
      */
     public function getSelectDistinctPartitionValuesCommand(
         BigqueryTableDefinition $sourceTableDefinition,
-        PartitionPruningColumn $column,
+        PartitionAwareImportColumn $column,
         int $limit,
     ): string {
         $value = sprintf(
@@ -785,7 +785,7 @@ SQL,
             Bigquery::TYPE_INT64 => sprintf('CAST(%s AS STRING)', $value),
             Bigquery::TYPE_DATE => sprintf(
                 'FORMAT_DATE(%s, %s)',
-                BigqueryQuote::quote(self::PARTITION_UNIT_FORMATS[PartitionPruningColumn::GRANULARITY_DAY][0]),
+                BigqueryQuote::quote(self::PARTITION_UNIT_FORMATS[PartitionAwareImportColumn::GRANULARITY_DAY][0]),
                 $value,
             ),
             Bigquery::TYPE_DATETIME => sprintf(
@@ -814,20 +814,20 @@ SQL,
         );
     }
 
-    private function getPartitionPruningConjunct(?PartitionPruningFilter $filter): string
+    private function getPartitionAwareImportConjunct(?PartitionAwareImportFilter $filter): string
     {
         if ($filter === null) {
             return '';
         }
         // the PK conditions end with a space
-        return 'AND ' . $this->getPartitionPruningCondition($filter) . ' ';
+        return 'AND ' . $this->getPartitionAwareImportCondition($filter) . ' ';
     }
 
     /**
      * Predicate on the bare destination column with typed literals: BigQuery prunes only on
      * plan-time constants compared to the partitioning column itself (not CAST(dest.col AS STRING)).
      */
-    private function getPartitionPruningCondition(PartitionPruningFilter $filter): string
+    private function getPartitionAwareImportCondition(PartitionAwareImportFilter $filter): string
     {
         $column = $filter->column;
         $dest = sprintf(
@@ -871,7 +871,7 @@ SQL,
     /**
      * @return array{0: string, 1: string, 2: string}
      */
-    private function getPartitionUnitFormat(PartitionPruningColumn $column): array
+    private function getPartitionUnitFormat(PartitionAwareImportColumn $column): array
     {
         $format = self::PARTITION_UNIT_FORMATS[$column->granularity ?? ''] ?? null;
         if ($format === null) {

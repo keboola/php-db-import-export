@@ -12,7 +12,7 @@ use Keboola\TableBackendUtils\Table\Bigquery\PartitioningConfig;
 /**
  * Destination partitioning column usable to prune the PK join of an incremental import.
  */
-final class PartitionPruningColumn
+final class PartitionAwareImportColumn
 {
     public const GRANULARITY_HOUR = 'HOUR';
     public const GRANULARITY_DAY = 'DAY';

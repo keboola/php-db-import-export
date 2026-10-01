@@ -11,14 +11,14 @@ use LogicException;
  * Partition values of every imported row, rendered by SqlBuilder as a destination-only predicate
  * so BigQuery prunes the destination partitions the PK join has to read.
  */
-final class PartitionPruningFilter
+final class PartitionAwareImportFilter
 {
     // values are produced by SqlBuilder::getSelectDistinctPartitionValuesCommand() in these formats
     private const VALUE_PATTERNS = [
-        PartitionPruningColumn::GRANULARITY_HOUR => '/^\d{4}-\d{2}-\d{2} \d{2}$/',
-        PartitionPruningColumn::GRANULARITY_DAY => '/^\d{4}-\d{2}-\d{2}$/',
-        PartitionPruningColumn::GRANULARITY_MONTH => '/^\d{4}-\d{2}$/',
-        PartitionPruningColumn::GRANULARITY_YEAR => '/^\d{4}$/',
+        PartitionAwareImportColumn::GRANULARITY_HOUR => '/^\d{4}-\d{2}-\d{2} \d{2}$/',
+        PartitionAwareImportColumn::GRANULARITY_DAY => '/^\d{4}-\d{2}-\d{2}$/',
+        PartitionAwareImportColumn::GRANULARITY_MONTH => '/^\d{4}-\d{2}$/',
+        PartitionAwareImportColumn::GRANULARITY_YEAR => '/^\d{4}$/',
     ];
     private const DATE_PATTERN = '/^\d{4}-\d{2}-\d{2}$/';
     private const INT64_PATTERN = '/^-?\d{1,19}$/';
@@ -27,7 +27,7 @@ final class PartitionPruningFilter
      * @param non-empty-list<string> $values
      */
     private function __construct(
-        public readonly PartitionPruningColumn $column,
+        public readonly PartitionAwareImportColumn $column,
         public readonly array $values,
     ) {
     }
@@ -40,7 +40,7 @@ final class PartitionPruningFilter
      * @param string[] $values
      */
     public static function fromDistinctValues(
-        PartitionPruningColumn $column,
+        PartitionAwareImportColumn $column,
         array $values,
         int $maxValues,
     ): ?self {
