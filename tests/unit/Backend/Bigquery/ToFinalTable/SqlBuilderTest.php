@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace Tests\Keboola\Db\ImportExportUnit\Backend\Bigquery\ToFinalTable;
 
+use Generator;
 use Keboola\Datatype\Definition\Bigquery;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryImportOptions;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionPruningColumn;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionPruningFilter;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\SqlBuilder;
 use Keboola\Db\ImportExport\Backend\TimestampMode;
 use Keboola\TableBackendUtils\Column\Bigquery\BigqueryColumn;
 use Keboola\TableBackendUtils\Column\ColumnCollection;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableDefinition;
+use Keboola\TableBackendUtils\Table\Bigquery\PartitioningConfig;
+use Keboola\TableBackendUtils\Table\Bigquery\RangePartitioningConfig;
+use Keboola\TableBackendUtils\Table\Bigquery\TimePartitioningConfig;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -345,6 +352,224 @@ class SqlBuilderTest extends TestCase
             . 'SELECT `src`.`id`,`src`.`name`,CAST(\'2024-01-01 00:00:00\' as TIMESTAMP) '
             . 'FROM `in.c-main`.`dedup_4` AS `src`',
             $sql,
+        );
+    }
+
+    /**
+     * @param string[] $values
+     */
+    private function partitionFilter(
+        BigqueryTableDefinition $destination,
+        PartitioningConfig $partitioning,
+        array $values,
+    ): PartitionPruningFilter {
+        $column = PartitionPruningColumn::fromDestination($partitioning, $destination);
+        self::assertNotNull($column);
+        $filter = PartitionPruningFilter::fromDistinctValues($column, $values, 1000);
+        self::assertNotNull($filter);
+        return $filter;
+    }
+
+    private static function partitionedTable(string $schema, string $tableName, string $partitionColumn): BigqueryTableDefinition
+    {
+        return new BigqueryTableDefinition($schema, $tableName, false, new ColumnCollection([
+            new BigqueryColumn('id', new Bigquery(Bigquery::TYPE_STRING)),
+            new BigqueryColumn('day', new Bigquery(Bigquery::TYPE_DATE)),
+            new BigqueryColumn('ts', new Bigquery(Bigquery::TYPE_TIMESTAMP)),
+            new BigqueryColumn('dt', new Bigquery(Bigquery::TYPE_DATETIME)),
+            new BigqueryColumn('bucket', new Bigquery(Bigquery::TYPE_INT64)),
+        ]), ['id', $partitionColumn]);
+    }
+
+    /**
+     * String table (cross-backend load): the PK join compares CAST(dest AS STRING), but the pruning
+     * conjunct must use the bare destination column with typed literals or BigQuery cannot prune.
+     */
+    public function testPartitionFilterIsAppendedOnBareDestinationColumnForStringTable(): void
+    {
+        $destination = $this->table('out.c-main', 'dest', [
+            $this->col('id', Bigquery::TYPE_STRING),
+            $this->col('day', Bigquery::TYPE_DATE),
+            $this->col('name', Bigquery::TYPE_STRING),
+        ], ['id', 'day']);
+        $dedup = $this->table('in.c-main', 'dedup', [
+            $this->col('id', Bigquery::TYPE_STRING),
+            $this->col('day', Bigquery::TYPE_STRING),
+            $this->col('name', Bigquery::TYPE_STRING),
+        ]);
+        $options = new BigqueryImportOptions(isIncremental: true);
+        $filter = $this->partitionFilter(
+            $destination,
+            new PartitioningConfig(new TimePartitioningConfig('DAY', null, 'day'), null, false),
+            ['2024-01-02', '2024-01-01'],
+        );
+        $builder = $this->getInstance();
+
+        $pk = '`dest`.`id` = COALESCE(`src`.`id`, \'\') AND CAST(`dest`.`day` AS STRING) = COALESCE(`src`.`day`, \'\') ';
+        $prune = '`dest`.`day` IN (DATE \'2024-01-01\', DATE \'2024-01-02\')';
+        $set = '`id` = COALESCE(`src`.`id`, \'\'), `day` = CAST(COALESCE(`src`.`day`, \'\') AS DATE), '
+            . '`name` = COALESCE(`src`.`name`, \'\')';
+        $compare = '`dest`.`id` != COALESCE(`src`.`id`, \'\') OR CAST(`dest`.`day` AS STRING) != COALESCE(`src`.`day`, \'\') '
+            . 'OR `dest`.`name` != COALESCE(`src`.`name`, \'\')';
+
+        $deleteWithout = 'DELETE `in.c-main`.`dedup` AS `src` WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` WHERE '
+            . $pk . ')';
+        self::assertSame($deleteWithout, $builder->getDeleteOldItemsCommand($dedup, $destination, $options));
+        self::assertSame(
+            'DELETE `in.c-main`.`dedup` AS `src` WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` WHERE '
+            . $pk . 'AND ' . $prune . ' )',
+            $builder->getDeleteOldItemsCommand($dedup, $destination, $options, $filter),
+        );
+
+        $updateWithout = 'UPDATE `out.c-main`.`dest` AS `dest` SET ' . $set . ' FROM `in.c-main`.`dedup` AS `src` WHERE '
+            . $pk . ' AND (' . $compare . ')';
+        self::assertSame($updateWithout, $builder->getUpdateWithPkCommand($dedup, $destination, $options, 'ts'));
+        self::assertSame(
+            $updateWithout . ' AND ' . $prune,
+            $builder->getUpdateWithPkCommand($dedup, $destination, $options, 'ts', $filter),
+        );
+
+        $mergeTail = ' WHEN MATCHED AND (' . $compare . ') THEN UPDATE SET ' . $set
+            . ' WHEN NOT MATCHED THEN INSERT (`id`, `day`, `name`) VALUES (CAST(COALESCE(`src`.`id`, \'\') as STRING),'
+            . 'CAST(COALESCE(`src`.`day`, \'\') as DATE),CAST(COALESCE(`src`.`name`, \'\') as STRING))';
+        $mergeHead = 'MERGE `out.c-main`.`dest` AS `dest` USING `in.c-main`.`dedup` AS `src` ON ' . $pk;
+        self::assertSame($mergeHead . $mergeTail, $builder->getMergeCommand($dedup, $destination, $options, 'ts'));
+        self::assertSame(
+            $mergeHead . 'AND ' . $prune . ' ' . $mergeTail,
+            $builder->getMergeCommand($dedup, $destination, $options, 'ts', $filter),
+        );
+    }
+
+    /**
+     * @return Generator<string, array{string, PartitioningConfig, string[], string}>
+     */
+    public static function partitionConditionProvider(): Generator
+    {
+        $time = static fn(string $type, string $column) => new PartitioningConfig(
+            new TimePartitioningConfig($type, null, $column),
+            null,
+            false,
+        );
+        yield 'date, day' => [
+            'day',
+            $time('DAY', 'day'),
+            ['2024-01-02', '2024-01-01'],
+            '`dest`.`day` IN (DATE \'2024-01-01\', DATE \'2024-01-02\')',
+        ];
+        yield 'date, month: exact dates' => [
+            'day',
+            $time('MONTH', 'day'),
+            ['2024-02-15'],
+            '`dest`.`day` IN (DATE \'2024-02-15\')',
+        ];
+        yield 'integer range' => [
+            'bucket',
+            new PartitioningConfig(null, new RangePartitioningConfig('bucket', '-10', '100', '5'), false),
+            ['10', '-5', '3'],
+            '`dest`.`bucket` IN (-5, 3, 10)',
+        ];
+        yield 'timestamp, day: range per day in UTC' => [
+            'ts',
+            $time('DAY', 'ts'),
+            ['2024-01-03', '2024-01-01'],
+            '((`dest`.`ts` >= TIMESTAMP \'2024-01-01 00:00:00+00\' AND `dest`.`ts` < TIMESTAMP \'2024-01-02 00:00:00+00\')'
+            . ' OR (`dest`.`ts` >= TIMESTAMP \'2024-01-03 00:00:00+00\' AND `dest`.`ts` < TIMESTAMP \'2024-01-04 00:00:00+00\'))',
+        ];
+        yield 'timestamp, hour' => [
+            'ts',
+            $time('HOUR', 'ts'),
+            ['2024-01-01 23'],
+            '((`dest`.`ts` >= TIMESTAMP \'2024-01-01 23:00:00+00\' AND `dest`.`ts` < TIMESTAMP \'2024-01-02 00:00:00+00\'))',
+        ];
+        yield 'datetime, month' => [
+            'dt',
+            $time('MONTH', 'dt'),
+            ['2024-12'],
+            '((`dest`.`dt` >= DATETIME \'2024-12-01 00:00:00\' AND `dest`.`dt` < DATETIME \'2025-01-01 00:00:00\'))',
+        ];
+        yield 'datetime, year: last representable year has no upper bound' => [
+            'dt',
+            $time('YEAR', 'dt'),
+            ['9999', '9998'],
+            '((`dest`.`dt` >= DATETIME \'9998-01-01 00:00:00\' AND `dest`.`dt` < DATETIME \'9999-01-01 00:00:00\')'
+            . ' OR `dest`.`dt` >= DATETIME \'9999-01-01 00:00:00\')',
+        ];
+    }
+
+    /**
+     * @param string[] $values
+     */
+    #[DataProvider('partitionConditionProvider')]
+    public function testPartitionFilterConditionPerPartitionType(
+        string $partitionColumn,
+        PartitioningConfig $partitioning,
+        array $values,
+        string $expectedCondition,
+    ): void {
+        $destination = self::partitionedTable('out.c-main', 'dest', $partitionColumn);
+        $dedup = self::partitionedTable('in.c-main', 'dedup', $partitionColumn);
+        $options = new BigqueryImportOptions(isIncremental: true, usingTypes: BigqueryImportOptions::USING_TYPES_USER);
+
+        self::assertSame(
+            sprintf(
+                'DELETE `in.c-main`.`dedup` AS `src` WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` '
+                . 'WHERE `dest`.`id` = `src`.`id` AND `dest`.`%1$s` = `src`.`%1$s` AND %2$s )',
+                $partitionColumn,
+                $expectedCondition,
+            ),
+            $this->getInstance()->getDeleteOldItemsCommand(
+                $dedup,
+                $destination,
+                $options,
+                $this->partitionFilter($destination, $partitioning, $values),
+            ),
+        );
+    }
+
+    /**
+     * @return Generator<string, array{string, PartitioningConfig, string}>
+     */
+    public static function selectDistinctPartitionValuesProvider(): Generator
+    {
+        $time = static fn(string $type, string $column) => new PartitioningConfig(
+            new TimePartitioningConfig($type, null, $column),
+            null,
+            false,
+        );
+        yield 'date' => ['day', $time('DAY', 'day'), 'FORMAT_DATE(\'%E4Y-%m-%d\', SAFE_CAST(`day` AS DATE))'];
+        yield 'timestamp, hour' => [
+            'ts',
+            $time('HOUR', 'ts'),
+            'FORMAT_TIMESTAMP(\'%E4Y-%m-%d %H\', SAFE_CAST(`ts` AS TIMESTAMP), \'UTC\')',
+        ];
+        yield 'datetime, month' => ['dt', $time('MONTH', 'dt'), 'FORMAT_DATETIME(\'%E4Y-%m\', SAFE_CAST(`dt` AS DATETIME))'];
+        yield 'integer range' => [
+            'bucket',
+            new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '10'), false),
+            'CAST(SAFE_CAST(`bucket` AS INT64) AS STRING)',
+        ];
+    }
+
+    #[DataProvider('selectDistinctPartitionValuesProvider')]
+    public function testSelectDistinctPartitionValuesReadsWholeSourceTable(
+        string $partitionColumn,
+        PartitioningConfig $partitioning,
+        string $expectedValueSql,
+    ): void {
+        $column = PartitionPruningColumn::fromDestination(
+            $partitioning,
+            self::partitionedTable('out.c-main', 'dest', $partitionColumn),
+        );
+        self::assertNotNull($column);
+
+        self::assertSame(
+            'SELECT DISTINCT `partition_value` FROM (SELECT ' . $expectedValueSql
+            . ' AS `partition_value` FROM `in.c-main`.`dedup`) WHERE `partition_value` IS NOT NULL LIMIT 1001',
+            $this->getInstance()->getSelectDistinctPartitionValuesCommand(
+                self::partitionedTable('in.c-main', 'dedup', $partitionColumn),
+                $column,
+                1001,
+            ),
         );
     }
 }

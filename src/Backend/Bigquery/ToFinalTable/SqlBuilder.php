@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable;
 
+use DateTimeImmutable;
+use DateTimeZone;
 use Keboola\Datatype\Definition\BaseType;
 use Keboola\Datatype\Definition\Bigquery;
 use Keboola\Db\Import\Exception;
@@ -13,6 +15,7 @@ use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
 use Keboola\TableBackendUtils\Column\Bigquery\BigqueryColumn;
 use Keboola\TableBackendUtils\Escaping\Bigquery\BigqueryQuote;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableDefinition;
+use LogicException;
 
 class SqlBuilder
 {
@@ -40,6 +43,16 @@ class SqlBuilder
     ];
 
     private const MAX_CLUSTER_BY_COLUMNS = 4;
+
+    public const PARTITION_VALUE_ALIAS = 'partition_value';
+
+    // BigQuery format element => PHP format parsing it back; %E4Y keeps years zero-padded to 4 digits
+    private const PARTITION_UNIT_FORMATS = [
+        PartitionPruningColumn::GRANULARITY_HOUR => ['%E4Y-%m-%d %H', '!Y-m-d H', '+1 hour'],
+        PartitionPruningColumn::GRANULARITY_DAY => ['%E4Y-%m-%d', '!Y-m-d', '+1 day'],
+        PartitionPruningColumn::GRANULARITY_MONTH => ['%E4Y-%m', '!Y-m', '+1 month'],
+        PartitionPruningColumn::GRANULARITY_YEAR => ['%E4Y', '!Y', '+1 year'],
+    ];
 
     private function assertColumnExist(
         BigqueryTableDefinition $tableDefinition,
@@ -301,6 +314,7 @@ SQL,
         BigqueryTableDefinition $stagingTableDefinition,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $importOptions,
+        ?PartitionPruningFilter $partitionPruningFilter = null,
     ): string {
         $stagingTable = sprintf(
             '%s.%s',
@@ -315,7 +329,7 @@ SQL,
         );
 
         return sprintf(
-            'DELETE %s AS `src` WHERE EXISTS (SELECT * FROM %s AS `dest` WHERE %s)',
+            'DELETE %s AS `src` WHERE EXISTS (SELECT * FROM %s AS `dest` WHERE %s%s)',
             $stagingTable,
             $destinationTable,
             $this->getPrimaryKeyWhereConditions(
@@ -323,6 +337,7 @@ SQL,
                 $importOptions,
                 $destinationTableDefinition,
             ),
+            $this->getPartitionPruningConjunct($partitionPruningFilter),
         );
     }
 
@@ -460,6 +475,7 @@ SQL,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $importOptions,
         string $timestampValue,
+        ?PartitionPruningFilter $partitionPruningFilter = null,
     ): string {
         $columnsSet = $this->getColumnsSetForUpdate(
             $stagingTableDefinition,
@@ -480,7 +496,7 @@ SQL,
         );
 
         return sprintf(
-            'UPDATE %s AS `dest` SET %s FROM %s.%s AS `src` WHERE %s AND (%s)',
+            'UPDATE %s AS `dest` SET %s FROM %s.%s AS `src` WHERE %s AND (%s)%s',
             $dest,
             implode(', ', $columnsSet),
             BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
@@ -491,6 +507,9 @@ SQL,
                 $destinationTableDefinition,
             ),
             implode(' OR ', $columnsComparisonSql),
+            $partitionPruningFilter === null
+                ? ''
+                : ' AND ' . $this->getPartitionPruningCondition($partitionPruningFilter),
         );
     }
 
@@ -505,6 +524,7 @@ SQL,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $importOptions,
         string $timestampValue,
+        ?PartitionPruningFilter $partitionPruningFilter = null,
     ): string {
         $columnsSet = $this->getColumnsSetForUpdate(
             $stagingTableDefinition,
@@ -538,7 +558,7 @@ SQL,
         );
 
         return sprintf(
-            'MERGE %s AS `dest` USING %s AS `src` ON %s'
+            'MERGE %s AS `dest` USING %s AS `src` ON %s%s'
             . ' WHEN MATCHED AND (%s) THEN UPDATE SET %s'
             . ' WHEN NOT MATCHED THEN INSERT (%s) VALUES (%s)',
             $dest,
@@ -548,6 +568,7 @@ SQL,
                 $importOptions,
                 $destinationTableDefinition,
             ),
+            $this->getPartitionPruningConjunct($partitionPruningFilter),
             implode(' OR ', $columnsComparisonSql),
             implode(', ', $columnsSet),
             $this->getColumnsString($insertColumns),
@@ -743,6 +764,120 @@ SQL,
         );
 
         return implode(' AND ', $pkWhereSql) . ' ';
+    }
+
+    /**
+     * Distinct partition units of the whole source table, formatted as PartitionPruningFilter expects.
+     * SAFE_CAST: string-table sources hold the canonical text of the typed destination value; text that
+     * fails to cast cannot equal CAST(dest AS STRING) in the PK join, so dropping it loses no match.
+     */
+    public function getSelectDistinctPartitionValuesCommand(
+        BigqueryTableDefinition $sourceTableDefinition,
+        PartitionPruningColumn $column,
+        int $limit,
+    ): string {
+        $value = sprintf(
+            'SAFE_CAST(%s AS %s)',
+            BigqueryQuote::quoteSingleIdentifier($column->columnName),
+            $column->type,
+        );
+        $valueSql = match ($column->type) {
+            Bigquery::TYPE_INT64 => sprintf('CAST(%s AS STRING)', $value),
+            Bigquery::TYPE_DATE => sprintf(
+                'FORMAT_DATE(%s, %s)',
+                BigqueryQuote::quote(self::PARTITION_UNIT_FORMATS[PartitionPruningColumn::GRANULARITY_DAY][0]),
+                $value,
+            ),
+            Bigquery::TYPE_DATETIME => sprintf(
+                'FORMAT_DATETIME(%s, %s)',
+                BigqueryQuote::quote($this->getPartitionUnitFormat($column)[0]),
+                $value,
+            ),
+            // partition boundaries of TIMESTAMP columns are in UTC
+            default => sprintf(
+                'FORMAT_TIMESTAMP(%s, %s, \'UTC\')',
+                BigqueryQuote::quote($this->getPartitionUnitFormat($column)[0]),
+                $value,
+            ),
+        };
+
+        return sprintf(
+            'SELECT DISTINCT %3$s FROM (SELECT %1$s AS %3$s FROM %2$s) WHERE %3$s IS NOT NULL LIMIT %4$d',
+            $valueSql,
+            sprintf(
+                '%s.%s',
+                BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
+                BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
+            ),
+            BigqueryQuote::quoteSingleIdentifier(self::PARTITION_VALUE_ALIAS),
+            $limit,
+        );
+    }
+
+    private function getPartitionPruningConjunct(?PartitionPruningFilter $filter): string
+    {
+        if ($filter === null) {
+            return '';
+        }
+        // the PK conditions end with a space
+        return 'AND ' . $this->getPartitionPruningCondition($filter) . ' ';
+    }
+
+    /**
+     * Predicate on the bare destination column with typed literals: BigQuery prunes only on
+     * plan-time constants compared to the partitioning column itself (not CAST(dest.col AS STRING)).
+     */
+    private function getPartitionPruningCondition(PartitionPruningFilter $filter): string
+    {
+        $column = $filter->column;
+        $dest = sprintf(
+            '`dest`.%s',
+            BigqueryQuote::quoteSingleIdentifier($column->columnName),
+        );
+
+        if ($column->type === Bigquery::TYPE_INT64) {
+            return sprintf('%s IN (%s)', $dest, implode(', ', $filter->values));
+        }
+        if ($column->type === Bigquery::TYPE_DATE) {
+            return sprintf('%s IN (%s)', $dest, implode(', ', array_map(
+                static fn(string $value) => 'DATE ' . BigqueryQuote::quote($value),
+                $filter->values,
+            )));
+        }
+
+        // TIMESTAMP and DATETIME: one half-open range per partition unit
+        [, $phpFormat, $unitStep] = $this->getPartitionUnitFormat($column);
+        $literal = static fn(DateTimeImmutable $value): string => $column->type === Bigquery::TYPE_TIMESTAMP
+            ? 'TIMESTAMP ' . BigqueryQuote::quote($value->format('Y-m-d H:i:s') . '+00')
+            : 'DATETIME ' . BigqueryQuote::quote($value->format('Y-m-d H:i:s'));
+        $ranges = [];
+        foreach ($filter->values as $value) {
+            $start = DateTimeImmutable::createFromFormat($phpFormat, $value, new DateTimeZone('UTC'));
+            if ($start === false) {
+                throw new LogicException(sprintf('Cannot parse partition value "%s".', $value));
+            }
+            $end = $start->modify($unitStep);
+            if ((int) $end->format('Y') > 9999) {
+                // the last representable unit has no upper bound literal
+                $ranges[] = sprintf('%s >= %s', $dest, $literal($start));
+                continue;
+            }
+            $ranges[] = sprintf('(%1$s >= %2$s AND %1$s < %3$s)', $dest, $literal($start), $literal($end));
+        }
+
+        return '(' . implode(' OR ', $ranges) . ')';
+    }
+
+    /**
+     * @return array{0: string, 1: string, 2: string}
+     */
+    private function getPartitionUnitFormat(PartitionPruningColumn $column): array
+    {
+        $format = self::PARTITION_UNIT_FORMATS[$column->granularity ?? ''] ?? null;
+        if ($format === null) {
+            throw new LogicException(sprintf('Unsupported partition granularity "%s".', $column->granularity));
+        }
+        return $format;
     }
 
     /**

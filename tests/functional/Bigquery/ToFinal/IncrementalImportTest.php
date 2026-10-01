@@ -715,4 +715,104 @@ SQL,
         $destinationContent = $this->fetchTable($this->getDestinationDbName(), $tableName);
         $this->assertEqualsCanonicalizing($expectedContent, $destinationContent);
     }
+
+    /**
+     * @return Generator<string, array{string[], string}>
+     */
+    public static function partitionPruningProvider(): Generator
+    {
+        yield 'legacy, typed source' => [[], BigqueryImportOptions::USING_TYPES_USER];
+        yield 'optimized, typed source' => [
+            [BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT],
+            BigqueryImportOptions::USING_TYPES_USER,
+        ];
+        yield 'legacy, string source' => [[], BigqueryImportOptions::USING_TYPES_STRING];
+        yield 'optimized, string source' => [
+            [BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT],
+            BigqueryImportOptions::USING_TYPES_STRING,
+        ];
+    }
+
+    /**
+     * Partition pruning only narrows which destination partitions the PK join reads; the rows
+     * after the import must be the same with it off, on, and on but above the threshold.
+     *
+     * @param string[] $features
+     */
+    #[DataProvider('partitionPruningProvider')]
+    public function testPartitionPruningKeepsIncrementalImportResult(array $features, string $usingTypes): void
+    {
+        $sourceDayType = $usingTypes === BigqueryImportOptions::USING_TYPES_USER ? 'DATE' : 'STRING';
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s.`source` (`id` STRING, `day` %s, `value` STRING)',
+            BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName()),
+            $sourceDayType,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'INSERT INTO %1$s.`source` (`id`, `day`, `value`) VALUES '
+            . "('a', CAST('2024-01-01' AS %2\$s), 'new'), "
+            . "('b', CAST('2024-01-02' AS %2\$s), 'new'), "
+            . "('c', CAST('2024-01-04' AS %2\$s), 'same id, new day'), "
+            . "('d', CAST('2024-01-05' AS %2\$s), 'inserted')",
+            BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName()),
+            $sourceDayType,
+        )));
+        $source = (new BigqueryTableReflection($this->bqClient, $this->getSourceDbName(), 'source'))
+            ->getTableDefinition();
+        assert($source instanceof BigqueryTableDefinition);
+
+        $rowsByRun = [];
+        foreach (['off' => null, 'on' => 1000, 'above threshold' => 1] as $run => $maxValues) {
+            $tableName = 'partitioned_' . str_replace(' ', '_', $run);
+            $destinationTable = sprintf(
+                '%s.%s',
+                BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+                BigqueryQuote::quoteSingleIdentifier($tableName),
+            );
+            $this->bqClient->runQuery($this->bqClient->query(sprintf(
+                'CREATE TABLE %s (`id` STRING NOT NULL, `day` DATE NOT NULL, `value` STRING) PARTITION BY `day`',
+                $destinationTable,
+            )));
+            $this->bqClient->runQuery($this->bqClient->query(sprintf(
+                'INSERT INTO %s (`id`, `day`, `value`) VALUES'
+                . " ('a', DATE '2024-01-01', 'old'), ('a', DATE '2024-01-02', 'old, other day'),"
+                . " ('b', DATE '2024-01-02', 'old'), ('c', DATE '2024-01-03', 'old')",
+                $destinationTable,
+            )));
+            $destination = (new BigqueryTableReflection($this->bqClient, $this->getDestinationDbName(), $tableName))
+                ->getTableDefinition();
+            assert($destination instanceof BigqueryTableDefinition);
+            $destination = $this->cloneDefinitionWithDedupCol($destination, ['id', 'day']);
+
+            (new IncrementalImporter($this->bqClient))->importToTable(
+                $source,
+                $destination,
+                new BigqueryImportOptions(
+                    isIncremental: true,
+                    usingTypes: $usingTypes,
+                    features: $features,
+                    partitionPruning: $maxValues !== null,
+                    partitionPruningMaxValues: $maxValues,
+                ),
+                new ImportState($tableName),
+            );
+
+            $rowsByRun[$run] = iterator_to_array($this->bqClient->runQuery($this->bqClient->query(sprintf(
+                'SELECT `id`, CAST(`day` AS STRING) AS `day`, `value` FROM %s ORDER BY `id`, `day`',
+                $destinationTable,
+            ))), false);
+        }
+
+        $expected = [
+            ['id' => 'a', 'day' => '2024-01-01', 'value' => 'new'],
+            ['id' => 'a', 'day' => '2024-01-02', 'value' => 'old, other day'],
+            ['id' => 'b', 'day' => '2024-01-02', 'value' => 'new'],
+            ['id' => 'c', 'day' => '2024-01-03', 'value' => 'old'],
+            ['id' => 'c', 'day' => '2024-01-04', 'value' => 'same id, new day'],
+            ['id' => 'd', 'day' => '2024-01-05', 'value' => 'inserted'],
+        ];
+        self::assertSame($expected, $rowsByRun['off']);
+        self::assertSame($expected, $rowsByRun['on']);
+        self::assertSame($expected, $rowsByRun['above threshold']);
+    }
 }

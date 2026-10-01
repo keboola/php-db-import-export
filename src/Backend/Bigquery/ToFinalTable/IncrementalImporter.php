@@ -16,6 +16,7 @@ use Keboola\Db\ImportExport\Backend\ImportState;
 use Keboola\Db\ImportExport\Backend\Snowflake\Helper\DateTimeHelper;
 use Keboola\Db\ImportExport\Backend\ToFinalTableImporterInterface;
 use Keboola\Db\ImportExport\ImportOptionsInterface;
+use Keboola\TableBackendUtils\Connection\Bigquery\Session;
 use Keboola\TableBackendUtils\Connection\Bigquery\SessionFactory;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableDefinition;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableReflection;
@@ -102,6 +103,13 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                 $dedupRowCount = $bigqueryTableReflection->getRowsCount();
                 $state->setImportedRowsCount($dedupRowCount);
 
+                $partitionPruningFilter = $this->resolvePartitionPruningFilter(
+                    $deduplicationTableDefinition,
+                    $destinationTableDefinition,
+                    $options,
+                    $session,
+                );
+
                 if ($useOptimizedImport) {
                     // MERGE is a single atomic statement, replacing UPDATE+DELETE+INSERT;
                     // no explicit transaction is needed for the PK branch.
@@ -113,6 +121,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                                 $destinationTableDefinition,
                                 $options,
                                 $this->timestamp,
+                                $partitionPruningFilter,
                             ),
                             $session->getAsQueryOptions(),
                         ),
@@ -137,6 +146,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                                 $destinationTableDefinition,
                                 $options,
                                 $this->timestamp,
+                                $partitionPruningFilter,
                             ),
                             $session->getAsQueryOptions(),
                         ),
@@ -151,6 +161,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                                 $deduplicationTableDefinition,
                                 $destinationTableDefinition,
                                 $options,
+                                $partitionPruningFilter,
                             ),
                             $session->getAsQueryOptions(),
                         ),
@@ -225,5 +236,46 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         }
 
         return $state->getResult();
+    }
+
+    private function resolvePartitionPruningFilter(
+        BigqueryTableDefinition $deduplicationTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        BigqueryImportOptions $options,
+        Session $session,
+    ): ?PartitionPruningFilter {
+        if (!$options->partitionPruning || $options->partitionPruningMaxValues === null) {
+            return null;
+        }
+        $column = PartitionPruningColumn::fromDestination(
+            (new BigqueryTableReflection(
+                $this->bqClient,
+                $destinationTableDefinition->getSchemaName(),
+                $destinationTableDefinition->getTableName(),
+            ))->getPartitioningConfiguration(),
+            $destinationTableDefinition,
+        );
+        if ($column === null) {
+            return null;
+        }
+
+        // one row over the threshold is enough to know pruning is off; the DISTINCT still scans the whole table
+        $result = $this->bqClient->runQuery(
+            $this->bqClient->query(
+                $this->sqlBuilder->getSelectDistinctPartitionValuesCommand(
+                    $deduplicationTableDefinition,
+                    $column,
+                    $options->partitionPruningMaxValues + 1,
+                ),
+                $session->getAsQueryOptions(),
+            ),
+        );
+        $values = [];
+        foreach ($result as $row) {
+            assert(is_array($row));
+            $values[] = (string) $row[SqlBuilder::PARTITION_VALUE_ALIAS];
+        }
+
+        return PartitionPruningFilter::fromDistinctValues($column, $values, $options->partitionPruningMaxValues);
     }
 }

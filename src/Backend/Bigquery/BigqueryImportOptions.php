@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Keboola\Db\ImportExport\Backend\Bigquery;
 
+use InvalidArgumentException;
 use Keboola\Db\ImportExport\Backend\TimestampMode;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\TableBackendUtils\Connection\Bigquery\Session;
@@ -32,7 +33,14 @@ class BigqueryImportOptions extends ImportOptions
         array $importAsNull = self::DEFAULT_IMPORT_AS_NULL,
         array $features = [],
         public readonly TimestampMode $timestampMode = TimestampMode::CurrentTime,
+        public readonly bool $partitionPruning = false,
+        public readonly ?int $partitionPruningMaxValues = null,
     ) {
+        if ($partitionPruning && ($partitionPruningMaxValues === null || $partitionPruningMaxValues < 1)) {
+            throw new InvalidArgumentException(
+                'Partition pruning requires a positive partitionPruningMaxValues threshold.',
+            );
+        }
         parent::__construct(
             convertEmptyValuesToNull: $convertEmptyValuesToNull,
             isIncremental: $isIncremental,
