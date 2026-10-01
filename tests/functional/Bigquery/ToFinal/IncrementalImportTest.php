@@ -820,40 +820,46 @@ SQL,
     }
 
     /**
+     * @return Generator<string, array{string, string, string, string[]}>
+     */
+    public static function partitionedDestinationProvider(): Generator
+    {
+        // column type, PARTITION BY clause, value of row n (1..20) in partition d (0..59), filter values of d 10 and 11
+        yield 'DATE, day' => [
+            'DATE',
+            'PARTITION BY `part`',
+            'DATE_ADD(DATE \'2024-01-01\', INTERVAL d DAY)',
+            ['2024-01-11', '2024-01-12'],
+        ];
+        yield 'TIMESTAMP, day: OR of half-open ranges' => [
+            'TIMESTAMP',
+            'PARTITION BY TIMESTAMP_TRUNC(`part`, DAY)',
+            'TIMESTAMP_ADD(TIMESTAMP \'2024-01-01 00:00:00+00\', INTERVAL d * 24 + n HOUR)',
+            ['2024-01-11', '2024-01-12'],
+        ];
+        yield 'INT64, integer range: IN list' => [
+            'INT64',
+            'PARTITION BY RANGE_BUCKET(`part`, GENERATE_ARRAY(0, 600, 10))',
+            'd * 10 + MOD(n, 10)',
+            ['101', '102', '103', '111', '112', '113'],
+        ];
+    }
+
+    /**
      * Guards that the rendered filter is one BigQuery can prune on (bare column, typed literals), which
      * SQL-text assertions cannot prove: a CAST(dest.col AS STRING) or IN (SELECT ...) filter reads every partition.
+     *
+     * @param string[] $expectedFilterValues
      */
-    public function testPartitionAwareImportFilterPrunesDestinationPartitions(): void
-    {
-        $destinationTable = sprintf(
-            '%s.`partitioned_dest`',
-            BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
-        );
-        $sourceTable = sprintf('%s.`source`', BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName()));
-        $this->bqClient->runQuery($this->bqClient->query(sprintf(
-            'CREATE TABLE %s (`id` STRING NOT NULL, `day` DATE NOT NULL, `value` STRING) PARTITION BY `day`',
-            $destinationTable,
-        )));
-        // 60 daily partitions with 20 rows each
-        $this->bqClient->runQuery($this->bqClient->query(sprintf(
-            'INSERT INTO %s (`id`, `day`, `value`)'
-            . ' SELECT CONCAT(\'row-\', CAST(d AS STRING), \'-\', CAST(n AS STRING)),'
-            . ' DATE_ADD(DATE \'2024-01-01\', INTERVAL d DAY), REPEAT(\'x\', 100)'
-            . ' FROM UNNEST(GENERATE_ARRAY(0, 59)) AS d, UNNEST(GENERATE_ARRAY(1, 20)) AS n',
-            $destinationTable,
-        )));
-        $this->bqClient->runQuery($this->bqClient->query(sprintf(
-            'CREATE TABLE %s (`id` STRING, `day` DATE, `value` STRING)',
-            $sourceTable,
-        )));
-        // updates for 2 of the 60 days
-        $this->bqClient->runQuery($this->bqClient->query(sprintf(
-            'INSERT INTO %s (`id`, `day`, `value`)'
-            . ' SELECT CONCAT(\'row-\', CAST(d AS STRING), \'-\', CAST(n AS STRING)),'
-            . ' DATE_ADD(DATE \'2024-01-01\', INTERVAL d DAY), \'updated\''
-            . ' FROM UNNEST([10, 11]) AS d, UNNEST(GENERATE_ARRAY(1, 3)) AS n',
-            $sourceTable,
-        )));
+    #[DataProvider('partitionedDestinationProvider')]
+    public function testPartitionAwareImportFilterPrunesDestinationPartitions(
+        string $columnType,
+        string $partitionBy,
+        string $valueExpression,
+        array $expectedFilterValues,
+    ): void {
+        $this->createPartitionedDestination('partitioned_dest', $columnType, $partitionBy, $valueExpression);
+        $this->createPartitionedSource($columnType, $valueExpression);
 
         $destinationReflection = new BigqueryTableReflection(
             $this->bqClient,
@@ -862,7 +868,7 @@ SQL,
         );
         $destination = $destinationReflection->getTableDefinition();
         assert($destination instanceof BigqueryTableDefinition);
-        $destination = $this->cloneDefinitionWithDedupCol($destination, ['id', 'day']);
+        $destination = $this->cloneDefinitionWithDedupCol($destination, ['id', 'part']);
         $source = (new BigqueryTableReflection($this->bqClient, $this->getSourceDbName(), 'source'))
             ->getTableDefinition();
         assert($source instanceof BigqueryTableDefinition);
@@ -887,7 +893,7 @@ SQL,
         }
         $filter = PartitionAwareImportFilter::fromDistinctValues($column, $values, 1000);
         self::assertNotNull($filter);
-        self::assertSame(['2024-01-11', '2024-01-12'], $filter->values);
+        self::assertSame($expectedFilterValues, $filter->values);
 
         $options = new BigqueryImportOptions(isIncremental: true, usingTypes: BigqueryImportOptions::USING_TYPES_USER);
         $timestamp = '2024-01-01 00:00:00';
@@ -924,6 +930,180 @@ SQL,
                 sprintf('%s: filtered %d bytes, unfiltered %d bytes', $name, $filtered, $unfiltered),
             );
         }
+    }
+
+    /**
+     * @return Generator<string, array{string[], string[]}>
+     */
+    public static function importerPathProvider(): Generator
+    {
+        yield 'legacy UPDATE + DELETE' => [[], ['DELETE', 'UPDATE']];
+        yield 'optimized MERGE' => [[BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT], ['MERGE']];
+    }
+
+    /**
+     * SqlBuilder tests cannot catch the importer computing the filter but not passing it on, so this
+     * compares the bytes BigQuery actually processed for the importer's own DML jobs with the option off and on.
+     *
+     * @param string[] $features
+     * @param string[] $expectedStatementTypes
+     */
+    #[DataProvider('importerPathProvider')]
+    public function testIncrementalImporterAppliesPartitionAwareFilter(
+        array $features,
+        array $expectedStatementTypes,
+    ): void {
+        $columnType = 'DATE';
+        $partitionBy = 'PARTITION BY `part`';
+        $valueExpression = 'DATE_ADD(DATE \'2024-01-01\', INTERVAL d DAY)';
+        $this->createPartitionedSource($columnType, $valueExpression);
+        $source = (new BigqueryTableReflection($this->bqClient, $this->getSourceDbName(), 'source'))
+            ->getTableDefinition();
+        assert($source instanceof BigqueryTableDefinition);
+        // job listing has second precision and a shared project may skew clocks: filter by the unique table instead
+        $minCreationTime = (int) (microtime(true) * 1000) - 60_000;
+        $runId = substr(md5(uniqid('', true)), 0, 8);
+
+        $bytesByRun = [];
+        foreach (['off' => false, 'on' => true] as $run => $partitionAwareImport) {
+            $tableName = sprintf('importer_%s_%s', $run, $runId);
+            $this->createPartitionedDestination($tableName, $columnType, $partitionBy, $valueExpression);
+            $destination = (new BigqueryTableReflection($this->bqClient, $this->getDestinationDbName(), $tableName))
+                ->getTableDefinition();
+            assert($destination instanceof BigqueryTableDefinition);
+
+            (new IncrementalImporter($this->bqClient))->importToTable(
+                $source,
+                $this->cloneDefinitionWithDedupCol($destination, ['id', 'part']),
+                new BigqueryImportOptions(
+                    isIncremental: true,
+                    usingTypes: BigqueryImportOptions::USING_TYPES_USER,
+                    features: $features,
+                    partitionAwareImport: $partitionAwareImport,
+                    partitionAwareImportMaxValues: $partitionAwareImport ? 1000 : null,
+                ),
+                new ImportState($tableName),
+            );
+
+            $bytesByRun[$run] = $this->getDmlBytesProcessedByStatementType(
+                $minCreationTime,
+                sprintf(
+                    '%s.%s',
+                    BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+                    BigqueryQuote::quoteSingleIdentifier($tableName),
+                ),
+            );
+            self::assertSame($expectedStatementTypes, array_keys($bytesByRun[$run]), $run);
+        }
+
+        foreach ($expectedStatementTypes as $statementType) {
+            // same data as the dry-run test: 2 of 60 partitions read, ~30x less; 10x leaves margin
+            self::assertLessThanOrEqual(
+                intdiv($bytesByRun['off'][$statementType], 10),
+                $bytesByRun['on'][$statementType],
+                sprintf(
+                    '%s: on %d bytes, off %d bytes',
+                    $statementType,
+                    $bytesByRun['on'][$statementType],
+                    $bytesByRun['off'][$statementType],
+                ),
+            );
+        }
+    }
+
+    private function createPartitionedDestination(
+        string $tableName,
+        string $columnType,
+        string $partitionBy,
+        string $valueExpression,
+    ): void {
+        $table = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+            BigqueryQuote::quoteSingleIdentifier($tableName),
+        );
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s (`id` STRING NOT NULL, `part` %s NOT NULL, `value` STRING) %s',
+            $table,
+            $columnType,
+            $partitionBy,
+        )));
+        // 60 partitions with 20 rows each
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'INSERT INTO %s (`id`, `part`, `value`)'
+            . ' SELECT CONCAT(\'row-\', CAST(d AS STRING), \'-\', CAST(n AS STRING)), %s, REPEAT(\'x\', 100)'
+            . ' FROM UNNEST(GENERATE_ARRAY(0, 59)) AS d, UNNEST(GENERATE_ARRAY(1, 20)) AS n',
+            $table,
+            $valueExpression,
+        )));
+    }
+
+    private function createPartitionedSource(string $columnType, string $valueExpression): void
+    {
+        $table = sprintf('%s.`source`', BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName()));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s (`id` STRING, `part` %s, `value` STRING)',
+            $table,
+            $columnType,
+        )));
+        // updates for rows of 2 of the 60 destination partitions
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'INSERT INTO %s (`id`, `part`, `value`)'
+            . ' SELECT CONCAT(\'row-\', CAST(d AS STRING), \'-\', CAST(n AS STRING)), %s, \'updated\''
+            . ' FROM UNNEST([10, 11]) AS d, UNNEST(GENERATE_ARRAY(1, 3)) AS n',
+            $table,
+            $valueExpression,
+        )));
+    }
+
+    /**
+     * Bytes processed by this test's own finished UPDATE/DELETE/MERGE jobs whose SQL references $tableReference.
+     * The importer runs each statement as a separate session query job, so no script child jobs are involved.
+     *
+     * @return array<string, int> statement type => bytes, sorted by statement type
+     */
+    private function getDmlBytesProcessedByStatementType(int $minCreationTime, string $tableReference): array
+    {
+        $bytes = [];
+        $jobs = $this->bqClient->jobs([
+            'minCreationTime' => $minCreationTime,
+            'stateFilter' => 'done',
+            'projection' => 'full',
+        ]);
+        foreach ($jobs as $job) {
+            $query = self::arrayPath($job->info(), 'configuration', 'query', 'query');
+            if (!is_string($query) || !str_contains($query, $tableReference)) {
+                continue;
+            }
+            // jobs.list returns partial statistics; jobs.get has statementType and totalBytesProcessed
+            $statistics = self::arrayPath($job->reload(), 'statistics', 'query');
+            $statementType = is_array($statistics) ? ($statistics['statementType'] ?? null) : null;
+            if (!in_array($statementType, ['UPDATE', 'DELETE', 'MERGE'], true)) {
+                continue;
+            }
+            $processed = is_array($statistics) ? ($statistics['totalBytesProcessed'] ?? null) : null;
+            if (!is_numeric($processed)) {
+                self::fail(sprintf('Job %s has no totalBytesProcessed.', $job->id()));
+            }
+            $bytes[$statementType] = ($bytes[$statementType] ?? 0) + (int) $processed;
+        }
+        ksort($bytes);
+        return $bytes;
+    }
+
+    /**
+     * @param array<mixed> $data
+     */
+    private static function arrayPath(array $data, string ...$keys): mixed
+    {
+        $value = $data;
+        foreach ($keys as $key) {
+            if (!is_array($value) || !array_key_exists($key, $value)) {
+                return null;
+            }
+            $value = $value[$key];
+        }
+        return $value;
     }
 
     private function getDryRunBytesProcessed(string $sql): int
