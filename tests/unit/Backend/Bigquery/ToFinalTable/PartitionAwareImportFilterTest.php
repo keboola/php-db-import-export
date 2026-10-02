@@ -118,9 +118,34 @@ class PartitionAwareImportFilterTest extends TestCase
         PartitionAwareImportFilter::fromDistinctValues($column, ["2024-01-01') OR (TRUE"], 10);
     }
 
-    public function testOptionsRequireThresholdWhenPruningIsRequested(): void
+    /**
+     * @return Generator<string, array{int|null}>
+     */
+    public static function invalidThresholdProvider(): Generator
+    {
+        yield 'missing' => [null];
+        yield 'zero' => [0];
+        yield 'above the BigQuery 4,000 modified partitions limit' => [4001];
+    }
+
+    #[DataProvider('invalidThresholdProvider')]
+    public function testOptionsRejectInvalidThresholdWhenPartitionAwareImportIsRequested(?int $maxValues): void
     {
         $this->expectException(InvalidArgumentException::class);
-        new BigqueryImportOptions(isIncremental: true, partitionAwareImport: true);
+        new BigqueryImportOptions(
+            isIncremental: true,
+            partitionAwareImport: true,
+            partitionAwareImportMaxValues: $maxValues,
+        );
+    }
+
+    public function testOptionsAcceptThresholdAtTheLimit(): void
+    {
+        $options = new BigqueryImportOptions(
+            isIncremental: true,
+            partitionAwareImport: true,
+            partitionAwareImportMaxValues: BigqueryImportOptions::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT,
+        );
+        self::assertSame(4000, $options->partitionAwareImportMaxValues);
     }
 }

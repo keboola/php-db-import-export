@@ -365,7 +365,11 @@ class SqlBuilderTest extends TestCase
     ): PartitionAwareImportFilter {
         $column = PartitionAwareImportColumn::fromDestination($partitioning, $destination);
         self::assertNotNull($column);
-        $filter = PartitionAwareImportFilter::fromDistinctValues($column, $values, 1000);
+        $filter = PartitionAwareImportFilter::fromDistinctValues(
+            $column,
+            $values,
+            BigqueryImportOptions::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT,
+        );
         self::assertNotNull($filter);
         return $filter;
     }
@@ -576,11 +580,11 @@ class SqlBuilderTest extends TestCase
 
         self::assertSame(
             'SELECT DISTINCT `partition_value` FROM (SELECT ' . $expectedValueSql
-            . ' AS `partition_value` FROM `in.c-main`.`dedup`) WHERE `partition_value` IS NOT NULL LIMIT 1001',
+            . ' AS `partition_value` FROM `in.c-main`.`dedup`) WHERE `partition_value` IS NOT NULL LIMIT 4001',
             $this->getInstance()->getSelectDistinctPartitionValuesCommand(
                 self::partitionedTable('in.c-main', 'dedup', $partitionColumn),
                 $column,
-                1001,
+                BigqueryImportOptions::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT + 1,
             ),
         );
     }

@@ -765,7 +765,12 @@ SQL,
         assert($source instanceof BigqueryTableDefinition);
 
         $rowsByRun = [];
-        foreach (['off' => null, 'on' => 1000, 'above threshold' => 1] as $run => $maxValues) {
+        $runs = [
+            'off' => null,
+            'on' => BigqueryImportOptions::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT,
+            'above threshold' => 1,
+        ];
+        foreach ($runs as $run => $maxValues) {
             $tableName = 'partitioned_' . str_replace(' ', '_', $run);
             $destinationTable = sprintf(
                 '%s.%s',
@@ -881,7 +886,11 @@ SQL,
         self::assertNotNull($column);
         $values = [];
         $result = $this->bqClient->runQuery($this->bqClient->query(
-            $sqlBuilder->getSelectDistinctPartitionValuesCommand($source, $column, 1001),
+            $sqlBuilder->getSelectDistinctPartitionValuesCommand(
+                $source,
+                $column,
+                BigqueryImportOptions::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT + 1,
+            ),
         ));
         foreach ($result as $row) {
             assert(is_array($row));
@@ -891,7 +900,11 @@ SQL,
             }
             $values[] = $value;
         }
-        $filter = PartitionAwareImportFilter::fromDistinctValues($column, $values, 1000);
+        $filter = PartitionAwareImportFilter::fromDistinctValues(
+            $column,
+            $values,
+            BigqueryImportOptions::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT,
+        );
         self::assertNotNull($filter);
         self::assertSame($expectedFilterValues, $filter->values);
 
@@ -980,7 +993,9 @@ SQL,
                     usingTypes: BigqueryImportOptions::USING_TYPES_USER,
                     features: $features,
                     partitionAwareImport: $partitionAwareImport,
-                    partitionAwareImportMaxValues: $partitionAwareImport ? 1000 : null,
+                    partitionAwareImportMaxValues: $partitionAwareImport
+                        ? BigqueryImportOptions::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT
+                        : null,
                 ),
                 new ImportState($tableName),
             );

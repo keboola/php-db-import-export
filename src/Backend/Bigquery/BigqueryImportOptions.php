@@ -15,6 +15,9 @@ class BigqueryImportOptions extends ImportOptions
     // single MERGE instead of UPDATE+DELETE+INSERT
     public const FEATURE_OPTIMIZED_IMPORT = 'bigquery-optimized-import';
 
+    // BigQuery rejects a job that modifies more than 4,000 partitions, so a larger filter can never apply
+    public const PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT = 4000;
+
     private ?Session $session;
 
     /**
@@ -36,10 +39,15 @@ class BigqueryImportOptions extends ImportOptions
         public readonly bool $partitionAwareImport = false,
         public readonly ?int $partitionAwareImportMaxValues = null,
     ) {
-        if ($partitionAwareImport && ($partitionAwareImportMaxValues === null || $partitionAwareImportMaxValues < 1)) {
-            throw new InvalidArgumentException(
-                'Partition-aware import requires a positive partitionAwareImportMaxValues threshold.',
-            );
+        if ($partitionAwareImport
+            && ($partitionAwareImportMaxValues === null
+                || $partitionAwareImportMaxValues < 1
+                || $partitionAwareImportMaxValues > self::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT)
+        ) {
+            throw new InvalidArgumentException(sprintf(
+                'Partition-aware import requires a partitionAwareImportMaxValues threshold between 1 and %d.',
+                self::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT,
+            ));
         }
         parent::__construct(
             convertEmptyValuesToNull: $convertEmptyValuesToNull,
