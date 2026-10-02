@@ -44,39 +44,46 @@ final class PartitionAwareImportColumn
     }
 
     /**
-     * Null when pruning cannot be applied: no partitioning, ingestion-time partitioning,
-     * or a partition column that is not part of the primary key.
+     * The column to filter on, or why the destination cannot be filtered.
+     *
+     * @return self|PartitionAwareImportDecision::SKIPPED_NOT_PARTITIONED
+     *     |PartitionAwareImportDecision::SKIPPED_INGESTION_TIME_PARTITIONING
+     *     |PartitionAwareImportDecision::SKIPPED_COLUMN_NOT_IN_PRIMARY_KEY
+     *     |PartitionAwareImportDecision::SKIPPED_UNSUPPORTED_TYPE
      */
     public static function fromDestination(
         ?PartitioningConfig $partitioning,
         BigqueryTableDefinition $destination,
-    ): ?self {
+    ): self|string {
         if ($partitioning === null) {
-            return null;
+            return PartitionAwareImportDecision::SKIPPED_NOT_PARTITIONED;
         }
 
         $range = $partitioning->rangePartitioningConfig;
         if ($range !== null) {
             if (!in_array($range->column, $destination->getPrimaryKeysNames(), true)) {
-                return null;
+                return PartitionAwareImportDecision::SKIPPED_COLUMN_NOT_IN_PRIMARY_KEY;
             }
             return new self($range->column, Bigquery::TYPE_INT64, null);
         }
 
         $time = $partitioning->timePartitioningConfig;
-        if ($time === null || $time->column === null) {
-            return null;
+        if ($time === null) {
+            return PartitionAwareImportDecision::SKIPPED_NOT_PARTITIONED;
+        }
+        if ($time->column === null) {
+            return PartitionAwareImportDecision::SKIPPED_INGESTION_TIME_PARTITIONING;
         }
         if (!in_array($time->column, $destination->getPrimaryKeysNames(), true)) {
-            return null;
+            return PartitionAwareImportDecision::SKIPPED_COLUMN_NOT_IN_PRIMARY_KEY;
         }
         $granularity = strtoupper($time->type);
         if (!in_array($granularity, self::GRANULARITIES, true)) {
-            return null;
+            return PartitionAwareImportDecision::SKIPPED_UNSUPPORTED_TYPE;
         }
         $type = self::findColumnType($destination, $time->column);
         if ($type === null || !in_array($type, self::TIME_PARTITION_TYPES, true)) {
-            return null;
+            return PartitionAwareImportDecision::SKIPPED_UNSUPPORTED_TYPE;
         }
 
         return new self($time->column, $type, $granularity);

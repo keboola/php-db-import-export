@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Keboola\Db\ImportExport\Backend;
 
 use Keboola\Db\Import\Result;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportDecision;
 use Tracy\Debugger;
 
 class ImportState
@@ -21,6 +22,8 @@ class ImportState
     private array $importedColumns = [];
 
     private string $stagingTableName = '';
+
+    private ?PartitionAwareImportDecision $partitionAwareImportDecision = null;
 
     public function __construct(string $stagingTableName)
     {
@@ -63,6 +66,19 @@ class ImportState
     public function setImportedColumns(array $importedColumns): void
     {
         $this->importedColumns = $importedColumns;
+    }
+
+    public function setPartitionAwareImportDecision(PartitionAwareImportDecision $decision): void
+    {
+        $this->partitionAwareImportDecision = $decision;
+    }
+
+    /**
+     * Null unless the import requested partitionAwareImport and reached the primary-key dedup step.
+     */
+    public function getPartitionAwareImportDecision(): ?PartitionAwareImportDecision
+    {
+        return $this->partitionAwareImportDecision;
     }
 
     public function startTimer(string $timerName): void

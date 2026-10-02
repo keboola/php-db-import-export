@@ -11,6 +11,7 @@ use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryImportOptions;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\FullImporter;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\IncrementalImporter;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportColumn;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportDecision;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportFilter;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\SqlBuilder;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToStage\StageTableDefinitionFactory;
@@ -770,6 +771,8 @@ SQL,
             'on' => BigqueryImportOptions::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT,
             'above threshold' => 1,
         ];
+        $decisionByRun = [];
+        $timerNamesByRun = [];
         foreach ($runs as $run => $maxValues) {
             $tableName = 'partitioned_' . str_replace(' ', '_', $run);
             $destinationTable = sprintf(
@@ -792,7 +795,8 @@ SQL,
             assert($destination instanceof BigqueryTableDefinition);
             $destination = $this->cloneDefinitionWithDedupCol($destination, ['id', 'day']);
 
-            (new IncrementalImporter($this->bqClient))->importToTable(
+            $state = new ImportState($tableName);
+            $result = (new IncrementalImporter($this->bqClient))->importToTable(
                 $source,
                 $destination,
                 new BigqueryImportOptions(
@@ -802,8 +806,10 @@ SQL,
                     partitionAwareImport: $maxValues !== null,
                     partitionAwareImportMaxValues: $maxValues,
                 ),
-                new ImportState($tableName),
+                $state,
             );
+            $decisionByRun[$run] = $state->getPartitionAwareImportDecision()?->toLogContext();
+            $timerNamesByRun[$run] = array_column($result->getTimers(), 'name');
 
             $rowsByRun[$run] = iterator_to_array($this->bqClient->runQuery($this->bqClient->query(sprintf(
                 'SELECT `id`, CAST(`day` AS STRING) AS `day`, `value` FROM %s ORDER BY `id`, `day`',
@@ -822,6 +828,24 @@ SQL,
         self::assertSame($expected, $rowsByRun['off']);
         self::assertSame($expected, $rowsByRun['on']);
         self::assertSame($expected, $rowsByRun['above threshold']);
+
+        // the source holds 4 distinct days; the threshold query stops at 1 + 1 values
+        self::assertNull($decisionByRun['off']);
+        self::assertSame(
+            ['applied' => true, 'skippedReason' => null, 'column' => 'day', 'valueCount' => 4],
+            $decisionByRun['on'],
+        );
+        self::assertSame(
+            [
+                'applied' => false,
+                'skippedReason' => PartitionAwareImportDecision::SKIPPED_OVER_THRESHOLD,
+                'column' => 'day',
+                'valueCount' => 2,
+            ],
+            $decisionByRun['above threshold'],
+        );
+        self::assertNotContains('partitionAwareImportDistinctValues', $timerNamesByRun['off']);
+        self::assertContains('partitionAwareImportDistinctValues', $timerNamesByRun['on']);
     }
 
     /**
@@ -883,7 +907,7 @@ SQL,
             $destinationReflection->getPartitioningConfiguration(),
             $destination,
         );
-        self::assertNotNull($column);
+        self::assertInstanceOf(PartitionAwareImportColumn::class, $column);
         $values = [];
         $result = $this->bqClient->runQuery($this->bqClient->query(
             $sqlBuilder->getSelectDistinctPartitionValuesCommand(

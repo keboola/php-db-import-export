@@ -364,7 +364,7 @@ class SqlBuilderTest extends TestCase
         array $values,
     ): PartitionAwareImportFilter {
         $column = PartitionAwareImportColumn::fromDestination($partitioning, $destination);
-        self::assertNotNull($column);
+        self::assertInstanceOf(PartitionAwareImportColumn::class, $column);
         $filter = PartitionAwareImportFilter::fromDistinctValues(
             $column,
             $values,
@@ -576,7 +576,7 @@ class SqlBuilderTest extends TestCase
             $partitioning,
             self::partitionedTable('out.c-main', 'dest', $partitionColumn),
         );
-        self::assertNotNull($column);
+        self::assertInstanceOf(PartitionAwareImportColumn::class, $column);
 
         self::assertSame(
             'SELECT DISTINCT `partition_value` FROM (SELECT ' . $expectedValueSql

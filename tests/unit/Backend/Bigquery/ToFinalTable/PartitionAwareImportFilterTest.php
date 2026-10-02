@@ -9,6 +9,7 @@ use InvalidArgumentException;
 use Keboola\Datatype\Definition\Bigquery;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryImportOptions;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportColumn;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportDecision;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportFilter;
 use Keboola\TableBackendUtils\Column\Bigquery\BigqueryColumn;
 use Keboola\TableBackendUtils\Column\ColumnCollection;
@@ -41,17 +42,35 @@ class PartitionAwareImportFilterTest extends TestCase
     }
 
     /**
-     * @return Generator<string, array{?PartitioningConfig, string[]}>
+     * @return Generator<string, array{?PartitioningConfig, string[], PartitionAwareImportDecision::SKIPPED_*}>
      */
     public static function notApplicableProvider(): Generator
     {
-        yield 'not partitioned' => [null, ['id', 'day']];
-        yield 'no partitioning in config' => [new PartitioningConfig(null, null, false), ['id', 'day']];
-        yield 'ingestion-time partitioning' => [self::timePartitioning('DAY', null), ['id', 'day']];
-        yield 'time partition column not in PK' => [self::timePartitioning('DAY', 'day'), ['id']];
+        yield 'not partitioned' => [null, ['id', 'day'], PartitionAwareImportDecision::SKIPPED_NOT_PARTITIONED];
+        yield 'no partitioning in config' => [
+            new PartitioningConfig(null, null, false),
+            ['id', 'day'],
+            PartitionAwareImportDecision::SKIPPED_NOT_PARTITIONED,
+        ];
+        yield 'ingestion-time partitioning' => [
+            self::timePartitioning('DAY', null),
+            ['id', 'day'],
+            PartitionAwareImportDecision::SKIPPED_INGESTION_TIME_PARTITIONING,
+        ];
+        yield 'time partition column not in PK' => [
+            self::timePartitioning('DAY', 'day'),
+            ['id'],
+            PartitionAwareImportDecision::SKIPPED_COLUMN_NOT_IN_PRIMARY_KEY,
+        ];
         yield 'range partition column not in PK' => [
             new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '10'), false),
             ['id'],
+            PartitionAwareImportDecision::SKIPPED_COLUMN_NOT_IN_PRIMARY_KEY,
+        ];
+        yield 'time partitioning on a column of unsupported type' => [
+            self::timePartitioning('DAY', 'id'),
+            ['id'],
+            PartitionAwareImportDecision::SKIPPED_UNSUPPORTED_TYPE,
         ];
     }
 
@@ -59,11 +78,15 @@ class PartitionAwareImportFilterTest extends TestCase
      * @param string[] $primaryKeys
      */
     #[DataProvider('notApplicableProvider')]
-    public function testColumnIsNotResolvedWhenPruningCannotApply(
+    public function testColumnIsNotResolvedWhenPartitionAwareImportCannotApply(
         ?PartitioningConfig $partitioning,
         array $primaryKeys,
+        string $expectedSkippedReason,
     ): void {
-        self::assertNull(PartitionAwareImportColumn::fromDestination($partitioning, self::destination($primaryKeys)));
+        self::assertSame(
+            $expectedSkippedReason,
+            PartitionAwareImportColumn::fromDestination($partitioning, self::destination($primaryKeys)),
+        );
     }
 
     public function testColumnResolvesTypeAndGranularityFromDestination(): void
@@ -72,7 +95,7 @@ class PartitionAwareImportFilterTest extends TestCase
             self::timePartitioning('HOUR', 'ts'),
             self::destination(['id', 'ts']),
         );
-        self::assertNotNull($time);
+        self::assertInstanceOf(PartitionAwareImportColumn::class, $time);
         self::assertSame(
             ['ts', Bigquery::TYPE_TIMESTAMP, 'HOUR'],
             [$time->columnName, $time->type, $time->granularity],
@@ -82,7 +105,7 @@ class PartitionAwareImportFilterTest extends TestCase
             new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '10'), false),
             self::destination(['id', 'bucket']),
         );
-        self::assertNotNull($range);
+        self::assertInstanceOf(PartitionAwareImportColumn::class, $range);
         self::assertSame(
             ['bucket', Bigquery::TYPE_INT64, null],
             [$range->columnName, $range->type, $range->granularity],
@@ -95,7 +118,7 @@ class PartitionAwareImportFilterTest extends TestCase
             self::timePartitioning('DAY', 'day'),
             self::destination(['id', 'day']),
         );
-        self::assertNotNull($column);
+        self::assertInstanceOf(PartitionAwareImportColumn::class, $column);
         $values = ['2024-01-03', '2024-01-01', '2024-01-02'];
 
         self::assertNull(PartitionAwareImportFilter::fromDistinctValues($column, $values, 2));
@@ -112,7 +135,7 @@ class PartitionAwareImportFilterTest extends TestCase
             self::timePartitioning('DAY', 'day'),
             self::destination(['id', 'day']),
         );
-        self::assertNotNull($column);
+        self::assertInstanceOf(PartitionAwareImportColumn::class, $column);
 
         $this->expectException(LogicException::class);
         PartitionAwareImportFilter::fromDistinctValues($column, ["2024-01-01') OR (TRUE"], 10);

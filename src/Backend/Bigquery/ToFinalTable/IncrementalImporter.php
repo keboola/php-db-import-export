@@ -30,6 +30,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
     private const TIMER_UPDATE_TARGET_TABLE = 'updateTargetTable';
     private const TIMER_DELETE_UPDATED_ROWS = 'deleteUpdatedRowsFromStaging';
     private const TIMER_DEDUP_STAGING = 'dedupStaging';
+    private const TIMER_PARTITION_AWARE_IMPORT_DISTINCT_VALUES = 'partitionAwareImportDistinctValues';
 
     private BigQueryClient $bqClient;
 
@@ -109,6 +110,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                     $destinationTableDefinition,
                     $options,
                     $session,
+                    $state,
                 );
 
                 if ($useOptimizedImport) {
@@ -244,6 +246,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $options,
         Session $session,
+        ImportState $state,
     ): ?PartitionAwareImportFilter {
         if (!$options->partitionAwareImport || $options->partitionAwareImportMaxValues === null) {
             return null;
@@ -256,11 +259,13 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
             ))->getPartitioningConfiguration(),
             $destinationTableDefinition,
         );
-        if ($column === null) {
+        if (is_string($column)) {
+            $state->setPartitionAwareImportDecision(PartitionAwareImportDecision::skipped($column));
             return null;
         }
 
         // one row over the threshold is enough to know pruning is off; the DISTINCT still scans the whole table
+        $state->startTimer(self::TIMER_PARTITION_AWARE_IMPORT_DISTINCT_VALUES);
         $result = $this->bqClient->runQuery(
             $this->bqClient->query(
                 $this->sqlBuilder->getSelectDistinctPartitionValuesCommand(
@@ -280,11 +285,31 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
             }
             $values[] = $value;
         }
+        $state->stopTimer(self::TIMER_PARTITION_AWARE_IMPORT_DISTINCT_VALUES);
 
-        return PartitionAwareImportFilter::fromDistinctValues(
+        $filter = PartitionAwareImportFilter::fromDistinctValues(
             $column,
             $values,
             $options->partitionAwareImportMaxValues,
         );
+        if ($filter !== null) {
+            $decision = PartitionAwareImportDecision::applied($column->columnName, count($filter->values));
+        } elseif ($values === []) {
+            $decision = PartitionAwareImportDecision::skipped(
+                PartitionAwareImportDecision::SKIPPED_NO_VALUES,
+                $column->columnName,
+                0,
+            );
+        } else {
+            // the query stops at threshold + 1 values, so the count only says "over"
+            $decision = PartitionAwareImportDecision::skipped(
+                PartitionAwareImportDecision::SKIPPED_OVER_THRESHOLD,
+                $column->columnName,
+                count($values),
+            );
+        }
+        $state->setPartitionAwareImportDecision($decision);
+
+        return $filter;
     }
 }
