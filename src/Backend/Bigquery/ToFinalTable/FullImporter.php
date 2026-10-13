@@ -156,7 +156,6 @@ final class FullImporter implements ToFinalTableImporterInterface
                         $stagingTableDefinition,
                         $deduplicationTableName,
                         $destinationTableDefinition->getPrimaryKeysNames(),
-                        $options->useOptimizedImport(),
                     ),
                     $session->getAsQueryOptions(),
                 ),

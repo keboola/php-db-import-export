@@ -28,7 +28,6 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
 {
     private const TIMER_INSERT_INTO_TARGET = 'insertIntoTargetFromStaging';
     private const TIMER_UPDATE_TARGET_TABLE = 'updateTargetTable';
-    private const TIMER_DELETE_UPDATED_ROWS = 'deleteUpdatedRowsFromStaging';
     private const TIMER_DEDUP_STAGING = 'dedupStaging';
     private const TIMER_PARTITION_AWARE_IMPORT_DISTINCT_VALUES = 'partitionAwareImportDistinctValues';
 
@@ -64,15 +63,8 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         if ($session === null) {
             $session = (new SessionFactory($this->bqClient))->createSession();
         }
-        // table used in getInsertAllIntoTargetTableCommand if PK's are specified, dedup table is used
-        $tableToCopyFrom = $stagingTableDefinition;
-        $useOptimizedImport = $options->useOptimizedImport();
-
         try {
             $transactionStarted = false;
-            // when true, the PK branch already merged data into the destination table via a single
-            // MERGE statement, so the shared UPDATE/DELETE/INSERT-and-commit sequence below is skipped
-            $mergedViaOptimizedImport = false;
             if (!empty($destinationTableDefinition->getPrimaryKeysNames())) {
                 // has PKs for dedup
                 $deduplicationTableName = BackendHelper::generateTempDedupTableName();
@@ -84,7 +76,6 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                             $stagingTableDefinition,
                             $deduplicationTableName,
                             $destinationTableDefinition->getPrimaryKeysNames(),
-                            $useOptimizedImport,
                         ),
                         $session->getAsQueryOptions(),
                     ),
@@ -96,8 +87,6 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                 );
                 $deduplicationTableDefinition = $bigqueryTableReflection->getTableDefinition();
                 assert($deduplicationTableDefinition instanceof BigqueryTableDefinition);
-
-                $tableToCopyFrom = $deduplicationTableDefinition;
                 $state->stopTimer(self::TIMER_DEDUP_STAGING);
 
                 // Count unique rows in dedup table (= unique PKs from staging).
@@ -113,64 +102,21 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                     $state,
                 );
 
-                if ($useOptimizedImport) {
-                    // MERGE is a single atomic statement, replacing UPDATE+DELETE+INSERT;
-                    // no explicit transaction is needed for the PK branch.
-                    $state->startTimer(self::TIMER_UPDATE_TARGET_TABLE);
-                    $this->bqClient->runQuery(
-                        $this->bqClient->query(
-                            $this->sqlBuilder->getMergeCommand(
-                                $deduplicationTableDefinition,
-                                $destinationTableDefinition,
-                                $options,
-                                $this->timestamp,
-                                $partitionAwareImportFilter,
-                            ),
-                            $session->getAsQueryOptions(),
+                // MERGE is a single atomic statement, so the PK branch needs no explicit transaction
+                $state->startTimer(self::TIMER_UPDATE_TARGET_TABLE);
+                $this->bqClient->runQuery(
+                    $this->bqClient->query(
+                        $this->sqlBuilder->getMergeCommand(
+                            $deduplicationTableDefinition,
+                            $destinationTableDefinition,
+                            $options,
+                            $this->timestamp,
+                            $partitionAwareImportFilter,
                         ),
-                    );
-                    $state->stopTimer(self::TIMER_UPDATE_TARGET_TABLE);
-                    $mergedViaOptimizedImport = true;
-                } else {
-                    $this->bqClient->runQuery(
-                        $this->bqClient->query(
-                            $this->sqlBuilder->getBeginTransaction(),
-                            $session->getAsQueryOptions(),
-                        ),
-                    );
-                    $transactionStarted = true;
-
-                    // 1. Run UPDATE command to update rows in final table with updated data based on PKs
-                    $state->startTimer(self::TIMER_UPDATE_TARGET_TABLE);
-                    $this->bqClient->runQuery(
-                        $this->bqClient->query(
-                            $this->sqlBuilder->getUpdateWithPkCommand(
-                                $deduplicationTableDefinition,
-                                $destinationTableDefinition,
-                                $options,
-                                $this->timestamp,
-                                $partitionAwareImportFilter,
-                            ),
-                            $session->getAsQueryOptions(),
-                        ),
-                    );
-                    $state->stopTimer(self::TIMER_UPDATE_TARGET_TABLE);
-
-                    // 2. delete updated rows from staging table
-                    $state->startTimer(self::TIMER_DELETE_UPDATED_ROWS);
-                    $this->bqClient->runQuery(
-                        $this->bqClient->query(
-                            $this->sqlBuilder->getDeleteOldItemsCommand(
-                                $deduplicationTableDefinition,
-                                $destinationTableDefinition,
-                                $options,
-                                $partitionAwareImportFilter,
-                            ),
-                            $session->getAsQueryOptions(),
-                        ),
-                    );
-                    $state->stopTimer(self::TIMER_DELETE_UPDATED_ROWS);
-                }
+                        $session->getAsQueryOptions(),
+                    ),
+                );
+                $state->stopTimer(self::TIMER_UPDATE_TARGET_TABLE);
             } else {
                 $this->bqClient->runQuery(
                     $this->bqClient->query(
@@ -179,15 +125,13 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                     ),
                 );
                 $transactionStarted = true;
-            }
 
-            if (!$mergedViaOptimizedImport) {
                 // insert into destination table
                 $state->startTimer(self::TIMER_INSERT_INTO_TARGET);
                 $this->bqClient->runQuery(
                     $this->bqClient->query(
                         $this->sqlBuilder->getInsertAllIntoTargetTableCommand(
-                            $tableToCopyFrom,
+                            $stagingTableDefinition,
                             $destinationTableDefinition,
                             $options,
                             $this->timestamp,

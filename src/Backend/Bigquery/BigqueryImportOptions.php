@@ -11,10 +11,6 @@ use Keboola\TableBackendUtils\Connection\Bigquery\Session;
 
 class BigqueryImportOptions extends ImportOptions
 {
-    // reduces BigQuery shuffle usage: aggregation-based dedup + CLUSTER BY,
-    // single MERGE instead of UPDATE+DELETE+INSERT
-    public const FEATURE_OPTIMIZED_IMPORT = 'bigquery-optimized-import';
-
     // BigQuery rejects a job that modifies more than 4,000 partitions, so a larger filter can never apply
     public const PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT = 4000;
 
@@ -64,10 +60,5 @@ class BigqueryImportOptions extends ImportOptions
     public function getSession(): ?Session
     {
         return $this->session;
-    }
-
-    public function useOptimizedImport(): bool
-    {
-        return in_array(self::FEATURE_OPTIMIZED_IMPORT, $this->features(), true);
     }
 }
