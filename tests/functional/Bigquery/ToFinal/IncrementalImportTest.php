@@ -720,6 +720,112 @@ SQL,
     }
 
     /**
+     * @return Generator<string, array{string[]}>
+     */
+    public static function stringTableNullInAddedColumnProvider(): Generator
+    {
+        yield 'update' => [[]];
+        yield 'merge' => [[BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT]];
+    }
+
+    /**
+     * A column added to an existing BigQuery table holds NULL on the existing rows, because BigQuery
+     * cannot add a REQUIRED column or one with a DEFAULT. An incoming value must replace that NULL,
+     * while an incoming empty value counts as unchanged and leaves the row and its _timestamp alone.
+     *
+     * @param string[] $features
+     */
+    #[DataProvider('stringTableNullInAddedColumnProvider')]
+    public function testIncrementalImportIntoStringTableUpdatesNullInAddedColumn(array $features): void
+    {
+        $tableName = 'string_table_added_column';
+        $destinationTable = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+            BigqueryQuote::quoteSingleIdentifier($tableName),
+        );
+        $sourceTable = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName()),
+            BigqueryQuote::quoteSingleIdentifier($tableName),
+        );
+
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s (`id` STRING NOT NULL, `val` STRING NOT NULL, `_timestamp` TIMESTAMP NOT NULL)',
+            $destinationTable,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            "INSERT INTO %s (`id`, `val`, `_timestamp`) VALUES
+            ('1', 'a', '2026-01-01 00:00:00'),
+            ('2', 'a', '2026-01-01 00:00:00'),
+            ('3', 'a', '2026-01-01 00:00:00'),
+            ('4', 'a', '2026-01-01 00:00:00')",
+            $destinationTable,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'ALTER TABLE %s ADD COLUMN `new_col` STRING',
+            $destinationTable,
+        )));
+        $this->bqClient->dataset($this->getDestinationDbName())->table($tableName)->update([
+            'tableConstraints' => [
+                'primaryKey' => ['columns' => 'id'],
+            ],
+        ]);
+
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s (`id` STRING, `val` STRING, `new_col` STRING)',
+            $sourceTable,
+        )));
+        // an empty CSV value reaches the staging table as NULL, a quoted one as ''
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            "INSERT INTO %s (`id`, `val`, `new_col`) VALUES
+            ('1', 'a', 'x'),
+            ('2', 'b', 'x'),
+            ('3', 'a', NULL),
+            ('4', '', '')",
+            $sourceTable,
+        )));
+
+        $destination = (new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getDestinationDbName(),
+            $tableName,
+        ))->getTableDefinition();
+        $source = (new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getSourceDbName(),
+            $tableName,
+        ))->getTableDefinition();
+
+        (new IncrementalImporter(
+            $this->bqClient,
+            new DateTimeImmutable('2026-01-02 00:00:00', new DateTimeZone('UTC')),
+        ))->importToTable(
+            $source,
+            $destination,
+            new BigqueryImportOptions(
+                isIncremental: true,
+                useTimestamp: true,
+                usingTypes: BigqueryImportOptions::USING_TYPES_STRING,
+                features: $features,
+            ),
+            new ImportState($destination->getTableName()),
+        );
+
+        $this->assertEqualsCanonicalizing(
+            [
+                // only the added column differs
+                ['id' => '1', 'val' => 'a', '_timestamp' => '2026-01-02 00:00:00', 'new_col' => 'x'],
+                ['id' => '2', 'val' => 'b', '_timestamp' => '2026-01-02 00:00:00', 'new_col' => 'x'],
+                // NULL against an empty value is no change, so the row is not rewritten
+                ['id' => '3', 'val' => 'a', '_timestamp' => '2026-01-01 00:00:00', 'new_col' => null],
+                ['id' => '4', 'val' => '', '_timestamp' => '2026-01-02 00:00:00', 'new_col' => ''],
+            ],
+            $this->fetchTable($this->getDestinationDbName(), $tableName),
+        );
+    }
+
+    /**
      * @return Generator<string, array{string[], BigqueryImportOptions::USING_TYPES_*}>
      */
     public static function partitionAwareImportProvider(): Generator
