@@ -41,32 +41,6 @@ class IncrementalImportTest extends BigqueryBaseTestCase
         );
     }
 
-    protected static function getBigqueryIncrementalImportOptionsOptimized(
-        int $skipLines = ImportOptions::SKIP_FIRST_LINE,
-    ): BigqueryImportOptions {
-        return new BigqueryImportOptions(
-            convertEmptyValuesToNull: [],
-            isIncremental: true,
-            useTimestamp: true,
-            numberOfIgnoredLines: $skipLines,
-            usingTypes: BigqueryImportOptions::USING_TYPES_STRING,
-            features: [BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT],
-        );
-    }
-
-    protected static function getSimpleImportOptionsOptimized(
-        int $skipLines = ImportOptions::SKIP_FIRST_LINE,
-    ): BigqueryImportOptions {
-        return new BigqueryImportOptions(
-            convertEmptyValuesToNull: [],
-            isIncremental: false,
-            useTimestamp: true,
-            numberOfIgnoredLines: $skipLines,
-            usingTypes: BigqueryImportOptions::USING_TYPES_STRING,
-            features: [BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT],
-        );
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -191,72 +165,11 @@ class IncrementalImportTest extends BigqueryBaseTestCase
     }
 
     /**
-     * Same scenarios as incrementalImportData(), but with the bigquery-optimized-import feature
-     * enabled: aggregation-based dedup + CLUSTER BY on the dedup table, and a single MERGE
-     * replacing UPDATE+DELETE+INSERT. Must produce identical final table contents.
-     *
-     * @return Generator<string, array<mixed>>
-     */
-    public static function incrementalImportDataOptimized(): Generator
-    {
-        $accountsStub = static::getParseCsvStub('expectation.tw_accounts.increment.csv');
-        $multiPKStub = static::getParseCsvStub('expectation.multi-pk_not-null.increment.csv');
-
-        yield 'simple optimized' => [
-            static::getSourceInstance(
-                'tw_accounts.csv',
-                $accountsStub->getColumns(),
-                false,
-                false,
-                ['id'],
-            ),
-            static::getSimpleImportOptionsOptimized(),
-            static::getSourceInstance(
-                'tw_accounts.increment.csv',
-                $accountsStub->getColumns(),
-                false,
-                false,
-                ['id'],
-            ),
-            static::getBigqueryIncrementalImportOptionsOptimized(),
-            [static::getDestinationDbName(), 'accounts-3'],
-            $accountsStub->getRows(),
-            3, // 4 rows in CSV but id=18 is duplicated, so 3 unique PKs
-            self::TABLE_ACCOUNTS_3,
-            ['id'],
-        ];
-        yield 'multi pk optimized' => [
-            static::getSourceInstance(
-                'multi-pk_not-null.csv',
-                $multiPKStub->getColumns(),
-                false,
-                false,
-                ['VisitID', 'Value', 'MenuItem'],
-            ),
-            static::getSimpleImportOptionsOptimized(),
-            static::getSourceInstance(
-                'multi-pk_not-null.increment.csv',
-                $multiPKStub->getColumns(),
-                false,
-                false,
-                ['VisitID', 'Value', 'MenuItem'],
-            ),
-            static::getBigqueryIncrementalImportOptionsOptimized(),
-            [static::getDestinationDbName(), self::TABLE_MULTI_PK_WITH_TS],
-            $multiPKStub->getRows(),
-            3,
-            self::TABLE_MULTI_PK_WITH_TS,
-            ['VisitID', 'Value', 'MenuItem'],
-        ];
-    }
-
-    /**
      * @param string[]     $table
      * @param string[]     $dedupCols
      * @param array<mixed> $expected
      */
     #[DataProvider('incrementalImportData')]
-    #[DataProvider('incrementalImportDataOptimized')]
     public function testIncrementalImport(
         Storage\SourceInterface $fullLoadSource,
         BigqueryImportOptions $fullLoadOptions,
@@ -489,15 +402,12 @@ SQL,
      * Test documenting non-deterministic deduplication behavior with duplicate primary keys.
      *
      * KNOWN LIMITATION: When source table contains multiple rows with identical PK values,
-     * the deduplication uses ORDER BY on PK columns only, which provides no tie-breaker.
-     * This results in non-deterministic selection of which duplicate row is kept.
+     * the deduplication keeps ANY_VALUE() of the row per PK, so which duplicate survives is
+     * non-deterministic.
      *
      * This test verifies that:
      * 1. Deduplication does occur (only unique PK rows remain)
      * 2. The behavior is currently non-deterministic (may pick different rows on different runs)
-     *
-     * To fix this issue, the ORDER BY clause in getDedupSelect() should include all columns,
-     * not just primary key columns.
      */
     public function testDeduplicationWithDuplicatePKsIsNonDeterministic(): void
     {
@@ -720,23 +630,11 @@ SQL,
     }
 
     /**
-     * @return Generator<string, array{string[]}>
-     */
-    public static function stringTableNullInAddedColumnProvider(): Generator
-    {
-        yield 'update' => [[]];
-        yield 'merge' => [[BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT]];
-    }
-
-    /**
      * A column added to an existing BigQuery table holds NULL on the existing rows, because BigQuery
      * cannot add a REQUIRED column or one with a DEFAULT. An incoming value must replace that NULL,
      * while an incoming empty value counts as unchanged and leaves the row and its _timestamp alone.
-     *
-     * @param string[] $features
      */
-    #[DataProvider('stringTableNullInAddedColumnProvider')]
-    public function testIncrementalImportIntoStringTableUpdatesNullInAddedColumn(array $features): void
+    public function testIncrementalImportIntoStringTableUpdatesNullInAddedColumn(): void
     {
         $tableName = 'string_table_added_column';
         $destinationTable = sprintf(
@@ -807,7 +705,6 @@ SQL,
                 isIncremental: true,
                 useTimestamp: true,
                 usingTypes: BigqueryImportOptions::USING_TYPES_STRING,
-                features: $features,
             ),
             new ImportState($destination->getTableName()),
         );
@@ -826,31 +723,22 @@ SQL,
     }
 
     /**
-     * @return Generator<string, array{string[], BigqueryImportOptions::USING_TYPES_*}>
+     * @return Generator<string, array{BigqueryImportOptions::USING_TYPES_*}>
      */
     public static function partitionAwareImportProvider(): Generator
     {
-        yield 'legacy, typed source' => [[], BigqueryImportOptions::USING_TYPES_USER];
-        yield 'optimized, typed source' => [
-            [BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT],
-            BigqueryImportOptions::USING_TYPES_USER,
-        ];
-        yield 'legacy, string source' => [[], BigqueryImportOptions::USING_TYPES_STRING];
-        yield 'optimized, string source' => [
-            [BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT],
-            BigqueryImportOptions::USING_TYPES_STRING,
-        ];
+        yield 'typed source' => [BigqueryImportOptions::USING_TYPES_USER];
+        yield 'string source' => [BigqueryImportOptions::USING_TYPES_STRING];
     }
 
     /**
      * Partition-aware import only narrows which destination partitions the PK join reads; the rows
      * after the import must be the same with it off, on, and on but above the threshold.
      *
-     * @param string[] $features
      * @param BigqueryImportOptions::USING_TYPES_* $usingTypes
      */
     #[DataProvider('partitionAwareImportProvider')]
-    public function testPartitionAwareImportKeepsIncrementalImportResult(array $features, string $usingTypes): void
+    public function testPartitionAwareImportKeepsIncrementalImportResult(string $usingTypes): void
     {
         $sourceDayType = $usingTypes === BigqueryImportOptions::USING_TYPES_USER ? 'DATE' : 'STRING';
         $this->bqClient->runQuery($this->bqClient->query(sprintf(
@@ -908,7 +796,6 @@ SQL,
                 new BigqueryImportOptions(
                     isIncremental: true,
                     usingTypes: $usingTypes,
-                    features: $features,
                     partitionAwareImport: $maxValues !== null,
                     partitionAwareImportMaxValues: $maxValues,
                 ),
@@ -1048,19 +935,6 @@ SQL,
                 $timestamp,
                 $f,
             ),
-            'UPDATE' => static fn(?PartitionAwareImportFilter $f) => $sqlBuilder->getUpdateWithPkCommand(
-                $source,
-                $destination,
-                $options,
-                $timestamp,
-                $f,
-            ),
-            'DELETE' => static fn(?PartitionAwareImportFilter $f) => $sqlBuilder->getDeleteOldItemsCommand(
-                $source,
-                $destination,
-                $options,
-                $f,
-            ),
         ];
         foreach ($statements as $name => $buildSql) {
             $unfiltered = $this->getDryRunBytesProcessed($buildSql(null));
@@ -1076,26 +950,12 @@ SQL,
     }
 
     /**
-     * @return Generator<string, array{string[], string[]}>
-     */
-    public static function importerPathProvider(): Generator
-    {
-        yield 'legacy UPDATE + DELETE' => [[], ['DELETE', 'UPDATE']];
-        yield 'optimized MERGE' => [[BigqueryImportOptions::FEATURE_OPTIMIZED_IMPORT], ['MERGE']];
-    }
-
-    /**
      * SqlBuilder tests cannot catch the importer computing the filter but not passing it on, so this
      * compares the bytes BigQuery actually processed for the importer's own DML jobs with the option off and on.
-     *
-     * @param string[] $features
-     * @param string[] $expectedStatementTypes
      */
-    #[DataProvider('importerPathProvider')]
-    public function testIncrementalImporterAppliesPartitionAwareFilter(
-        array $features,
-        array $expectedStatementTypes,
-    ): void {
+    public function testIncrementalImporterAppliesPartitionAwareFilter(): void
+    {
+        $expectedStatementTypes = ['MERGE'];
         $columnType = 'DATE';
         $partitionBy = 'PARTITION BY `part`';
         $valueExpression = 'DATE_ADD(DATE \'2024-01-01\', INTERVAL d DAY)';
@@ -1121,7 +981,6 @@ SQL,
                 new BigqueryImportOptions(
                     isIncremental: true,
                     usingTypes: BigqueryImportOptions::USING_TYPES_USER,
-                    features: $features,
                     partitionAwareImport: $partitionAwareImport,
                     partitionAwareImportMaxValues: $partitionAwareImport
                         ? BigqueryImportOptions::PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT
