@@ -234,7 +234,7 @@ class SqlBuilderTest extends TestCase
             'MERGE `out.c-main`.`dest` AS `dest` USING `in.c-main`.`dedup_5` AS `src` '
             . 'ON CAST(`dest`.`id` AS STRING) = COALESCE(`src`.`id`, \'\')  '
             . 'WHEN MATCHED AND (CAST(`dest`.`id` AS STRING) != COALESCE(`src`.`id`, \'\') '
-            . 'OR `dest`.`name` != COALESCE(`src`.`name`, \'\') '
+            . 'OR COALESCE(`dest`.`name`, \'\') != COALESCE(`src`.`name`, \'\') '
             . 'OR CAST(`dest`.`price` AS STRING) != COALESCE(`src`.`price`, \'\')) '
             . 'THEN UPDATE SET `id` = CAST(COALESCE(`src`.`id`, \'\') AS INT64), '
             . '`name` = IF(`src`.`name` = \'\', NULL, `src`.`name`), '
@@ -417,9 +417,9 @@ class SqlBuilderTest extends TestCase
         $prune = '`dest`.`day` IN (DATE \'2024-01-01\', DATE \'2024-01-02\')';
         $set = '`id` = COALESCE(`src`.`id`, \'\'), `day` = CAST(COALESCE(`src`.`day`, \'\') AS DATE), '
             . '`name` = COALESCE(`src`.`name`, \'\')';
-        $compare = '`dest`.`id` != COALESCE(`src`.`id`, \'\') '
+        $compare = 'COALESCE(`dest`.`id`, \'\') != COALESCE(`src`.`id`, \'\') '
             . 'OR CAST(`dest`.`day` AS STRING) != COALESCE(`src`.`day`, \'\') '
-            . 'OR `dest`.`name` != COALESCE(`src`.`name`, \'\')';
+            . 'OR COALESCE(`dest`.`name`, \'\') != COALESCE(`src`.`name`, \'\')';
 
         $deleteWithout = 'DELETE `in.c-main`.`dedup` AS `src` '
             . 'WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` WHERE ' . $pk . ')';

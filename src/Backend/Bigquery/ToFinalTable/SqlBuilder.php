@@ -704,8 +704,10 @@ SQL,
                     BigqueryQuote::quoteSingleIdentifier($columnName),
                 );
             } else {
+                // a column added to an existing table holds NULL on old rows (BigQuery cannot add
+                // a REQUIRED or DEFAULT column) and NULL != x is never true
                 $columnsComparisonSql[$key] = sprintf(
-                    '`dest`.%s != COALESCE(`src`.%s, \'\')',
+                    'COALESCE(`dest`.%s, \'\') != COALESCE(`src`.%s, \'\')',
                     BigqueryQuote::quoteSingleIdentifier($columnName),
                     BigqueryQuote::quoteSingleIdentifier($columnName),
                 );
