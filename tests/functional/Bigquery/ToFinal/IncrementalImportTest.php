@@ -723,6 +723,177 @@ SQL,
     }
 
     /**
+     * A workspace table typed by its input mapping is loaded from a string table through STRING staging,
+     * so its typed columns are compared as text. A NULL in such a column must not hide an incoming value.
+     */
+    public function testIncrementalImportIntoTypedDestinationUpdatesNullValue(): void
+    {
+        $tableName = 'typed_destination_null_value';
+        $destinationTable = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+            BigqueryQuote::quoteSingleIdentifier($tableName),
+        );
+        $sourceTable = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName()),
+            BigqueryQuote::quoteSingleIdentifier($tableName),
+        );
+
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s (`id` STRING NOT NULL, `amount` INT64, `_timestamp` TIMESTAMP NOT NULL)',
+            $destinationTable,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            "INSERT INTO %s (`id`, `amount`, `_timestamp`) VALUES
+            ('1', NULL, '2026-01-01 00:00:00'),
+            ('2', NULL, '2026-01-01 00:00:00'),
+            ('3', NULL, '2026-01-01 00:00:00'),
+            ('4', 7, '2026-01-01 00:00:00')",
+            $destinationTable,
+        )));
+        $this->bqClient->dataset($this->getDestinationDbName())->table($tableName)->update([
+            'tableConstraints' => [
+                'primaryKey' => ['columns' => 'id'],
+            ],
+        ]);
+
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s (`id` STRING, `amount` STRING)',
+            $sourceTable,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            "INSERT INTO %s (`id`, `amount`) VALUES
+            ('1', '5'),
+            ('2', NULL),
+            ('3', ''),
+            ('4', '8')",
+            $sourceTable,
+        )));
+
+        $destination = (new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getDestinationDbName(),
+            $tableName,
+        ))->getTableDefinition();
+        $source = (new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getSourceDbName(),
+            $tableName,
+        ))->getTableDefinition();
+
+        (new IncrementalImporter(
+            $this->bqClient,
+            new DateTimeImmutable('2026-01-02 00:00:00', new DateTimeZone('UTC')),
+        ))->importToTable(
+            $source,
+            $destination,
+            new BigqueryImportOptions(
+                isIncremental: true,
+                useTimestamp: true,
+                usingTypes: BigqueryImportOptions::USING_TYPES_STRING,
+            ),
+            new ImportState($destination->getTableName()),
+        );
+
+        $this->assertEqualsCanonicalizing(
+            [
+                ['id' => '1', 'amount' => 5, '_timestamp' => '2026-01-02 00:00:00'],
+                // NULL against NULL or an empty value is no change, so the row is not rewritten
+                ['id' => '2', 'amount' => null, '_timestamp' => '2026-01-01 00:00:00'],
+                ['id' => '3', 'amount' => null, '_timestamp' => '2026-01-01 00:00:00'],
+                ['id' => '4', 'amount' => 8, '_timestamp' => '2026-01-02 00:00:00'],
+            ],
+            $this->fetchTable($this->getDestinationDbName(), $tableName),
+        );
+    }
+
+    /**
+     * @return Generator<string, array{string}>
+     */
+    public static function nullPrimaryKeyProvider(): Generator
+    {
+        yield 'STRING primary key' => ['STRING'];
+        yield 'INT64 primary key' => ['INT64'];
+    }
+
+    /**
+     * A workspace input mapping may leave the primary key nullable and convert empty values to NULL,
+     * so an empty key is stored as NULL. Loading the same empty key again must update that row,
+     * not insert a duplicate.
+     */
+    #[DataProvider('nullPrimaryKeyProvider')]
+    public function testIncrementalImportMatchesNullPrimaryKey(string $primaryKeyType): void
+    {
+        $tableName = 'null_primary_key';
+        $destinationTable = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+            BigqueryQuote::quoteSingleIdentifier($tableName),
+        );
+        $sourceTable = sprintf(
+            '%s.%s',
+            BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName()),
+            BigqueryQuote::quoteSingleIdentifier($tableName),
+        );
+
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s (`id` %s, `val` STRING)',
+            $destinationTable,
+            $primaryKeyType,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            "INSERT INTO %s (`id`, `val`) VALUES (NULL, 'a'), (CAST('1' AS %s), 'a')",
+            $destinationTable,
+            $primaryKeyType,
+        )));
+        $this->bqClient->dataset($this->getDestinationDbName())->table($tableName)->update([
+            'tableConstraints' => [
+                'primaryKey' => ['columns' => 'id'],
+            ],
+        ]);
+
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s (`id` STRING, `val` STRING)',
+            $sourceTable,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            "INSERT INTO %s (`id`, `val`) VALUES ('', 'b'), ('1', 'a')",
+            $sourceTable,
+        )));
+
+        $destination = (new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getDestinationDbName(),
+            $tableName,
+        ))->getTableDefinition();
+        $source = (new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getSourceDbName(),
+            $tableName,
+        ))->getTableDefinition();
+
+        (new IncrementalImporter($this->bqClient))->importToTable(
+            $source,
+            $destination,
+            new BigqueryImportOptions(
+                convertEmptyValuesToNull: ['id'],
+                isIncremental: true,
+                usingTypes: BigqueryImportOptions::USING_TYPES_STRING,
+            ),
+            new ImportState($destination->getTableName()),
+        );
+
+        $this->assertEqualsCanonicalizing(
+            [
+                ['id' => null, 'val' => 'b'],
+                ['id' => $primaryKeyType === 'INT64' ? 1 : '1', 'val' => 'a'],
+            ],
+            $this->fetchTable($this->getDestinationDbName(), $tableName),
+        );
+    }
+
+    /**
      * @return Generator<string, array{BigqueryImportOptions::USING_TYPES_*}>
      */
     public static function partitionAwareImportProvider(): Generator
