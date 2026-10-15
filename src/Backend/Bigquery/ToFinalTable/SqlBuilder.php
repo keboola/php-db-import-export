@@ -587,9 +587,10 @@ SQL,
 
             if ($destColType !== null && strtoupper($destColType) !== 'STRING') {
                 // Cast dest to STRING so comparison works when staging columns are STRING
-                // but destination columns are typed (e.g. INT64 from cross-backend CSV loads)
+                // but destination columns are typed (e.g. INT64 from cross-backend CSV loads).
+                // Not IS DISTINCT FROM: NULL vs '' would then update and fail on CAST('' AS INT64).
                 $columnsComparisonSql[$key] = sprintf(
-                    'CAST(`dest`.%s AS STRING) != COALESCE(`src`.%s, \'\')',
+                    'COALESCE(CAST(`dest`.%s AS STRING), \'\') != COALESCE(`src`.%s, \'\')',
                     BigqueryQuote::quoteSingleIdentifier($columnName),
                     BigqueryQuote::quoteSingleIdentifier($columnName),
                 );
@@ -627,28 +628,33 @@ SQL,
 
                 // Check if PK column needs CAST
                 $destColType = null;
+                $destColNullable = false;
                 /**
             * @var BigqueryColumn $colDef
             */
                 foreach ($destinationTableDefinition->getColumnsDefinitions() as $colDef) {
                     if ($colDef->getColumnName() === $col) {
                         $destColType = $colDef->getColumnDefinition()->getType();
+                        $destColNullable = $colDef->getColumnDefinition()->isNullable();
                         break;
                     }
                 }
 
+                $destSql = sprintf('`dest`.%s', BigqueryQuote::quoteSingleIdentifier($col));
                 if ($destColType !== null && strtoupper($destColType) !== 'STRING') {
                     // Cast dest to STRING so comparison works when staging columns are STRING
                     // but destination columns are typed (e.g. INT64 from cross-backend CSV loads)
-                    return sprintf(
-                        'CAST(`dest`.%s AS STRING) = COALESCE(`src`.%s, \'\')',
-                        BigqueryQuote::quoteSingleIdentifier($col),
-                        BigqueryQuote::quoteSingleIdentifier($col),
-                    );
+                    $destSql = sprintf('CAST(%s AS STRING)', $destSql);
                 }
+                if ($destColNullable) {
+                    // a nullable workspace key stores an empty value as NULL (convertEmptyValuesToNull) and
+                    // NULL = x is never true; a REQUIRED key, as in every Storage table, keeps the plain join
+                    $destSql = sprintf('COALESCE(%s, \'\')', $destSql);
+                }
+
                 return sprintf(
-                    '`dest`.%s = COALESCE(`src`.%s, \'\')',
-                    BigqueryQuote::quoteSingleIdentifier($col),
+                    '%s = COALESCE(`src`.%s, \'\')',
+                    $destSql,
                     BigqueryQuote::quoteSingleIdentifier($col),
                 );
             },
@@ -662,6 +668,8 @@ SQL,
      * Distinct partition units of the whole source table, formatted as PartitionAwareImportFilter expects.
      * SAFE_CAST: string-table sources hold the canonical text of the typed destination value; text that
      * fails to cast cannot equal CAST(dest AS STRING) in the PK join, so dropping it loses no match.
+     * Only Storage table imports use this, and their primary key (which holds the partition column) is REQUIRED,
+     * so the NULL-safe join of a nullable key does not apply.
      */
     public function getSelectDistinctPartitionValuesCommand(
         BigqueryTableDefinition $sourceTableDefinition,

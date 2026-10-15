@@ -202,10 +202,10 @@ class SqlBuilderTest extends TestCase
 
         self::assertSame(
             'MERGE `out.c-main`.`dest` AS `dest` USING `in.c-main`.`dedup_5` AS `src` '
-            . 'ON CAST(`dest`.`id` AS STRING) = COALESCE(`src`.`id`, \'\')  '
-            . 'WHEN MATCHED AND (CAST(`dest`.`id` AS STRING) != COALESCE(`src`.`id`, \'\') '
+            . 'ON COALESCE(CAST(`dest`.`id` AS STRING), \'\') = COALESCE(`src`.`id`, \'\')  '
+            . 'WHEN MATCHED AND (COALESCE(CAST(`dest`.`id` AS STRING), \'\') != COALESCE(`src`.`id`, \'\') '
             . 'OR COALESCE(`dest`.`name`, \'\') != COALESCE(`src`.`name`, \'\') '
-            . 'OR CAST(`dest`.`price` AS STRING) != COALESCE(`src`.`price`, \'\')) '
+            . 'OR COALESCE(CAST(`dest`.`price` AS STRING), \'\') != COALESCE(`src`.`price`, \'\')) '
             . 'THEN UPDATE SET `id` = CAST(COALESCE(`src`.`id`, \'\') AS INT64), '
             . '`name` = IF(`src`.`name` = \'\', NULL, `src`.`name`), '
             . '`price` = CAST(COALESCE(`src`.`price`, \'\') AS NUMERIC), '
@@ -333,9 +333,10 @@ class SqlBuilderTest extends TestCase
      */
     public function testPartitionFilterIsAppendedOnBareDestinationColumnForStringTable(): void
     {
+        // a Storage table: primary key columns are REQUIRED
         $destination = $this->table('out.c-main', 'dest', [
-            $this->col('id', Bigquery::TYPE_STRING),
-            $this->col('day', Bigquery::TYPE_DATE),
+            $this->col('id', Bigquery::TYPE_STRING, ['nullable' => false]),
+            $this->col('day', Bigquery::TYPE_DATE, ['nullable' => false]),
             $this->col('name', Bigquery::TYPE_STRING),
         ], ['id', 'day']);
         $dedup = $this->table('in.c-main', 'dedup', [
@@ -357,7 +358,7 @@ class SqlBuilderTest extends TestCase
         $set = '`id` = COALESCE(`src`.`id`, \'\'), `day` = CAST(COALESCE(`src`.`day`, \'\') AS DATE), '
             . '`name` = COALESCE(`src`.`name`, \'\')';
         $compare = 'COALESCE(`dest`.`id`, \'\') != COALESCE(`src`.`id`, \'\') '
-            . 'OR CAST(`dest`.`day` AS STRING) != COALESCE(`src`.`day`, \'\') '
+            . 'OR COALESCE(CAST(`dest`.`day` AS STRING), \'\') != COALESCE(`src`.`day`, \'\') '
             . 'OR COALESCE(`dest`.`name`, \'\') != COALESCE(`src`.`name`, \'\')';
 
         $mergeTail = ' WHEN MATCHED AND (' . $compare . ') THEN UPDATE SET ' . $set
