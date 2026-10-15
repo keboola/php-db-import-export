@@ -644,7 +644,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         yield 'string' => [
             BigqueryImportOptions::USING_TYPES_STRING,
             // phpcs:ignore
-            'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = COALESCE(`src`.`col1`, \'\'), `col2` = COALESCE(`src`.`col2`, \'\') FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE `dest`.`col1` = COALESCE(`src`.`col1`, \'\')  AND (COALESCE(`dest`.`col1`, \'\') != COALESCE(`src`.`col1`, \'\') OR COALESCE(`dest`.`col2`, \'\') != COALESCE(`src`.`col2`, \'\'))',
+            'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = COALESCE(`src`.`col1`, \'\'), `col2` = COALESCE(`src`.`col2`, \'\') FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE COALESCE(`dest`.`col1`, \'\') = COALESCE(`src`.`col1`, \'\')  AND (COALESCE(`dest`.`col1`, \'\') != COALESCE(`src`.`col1`, \'\') OR COALESCE(`dest`.`col2`, \'\') != COALESCE(`src`.`col2`, \'\'))',
         ];
     }
 
@@ -747,7 +747,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         yield 'string' => [
             BigqueryImportOptions::USING_TYPES_STRING,
             // phpcs:ignore
-            'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = IF(`src`.`col1` = \'\', NULL, `src`.`col1`), `col2` = COALESCE(`src`.`col2`, \'\') FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE `dest`.`col1` = COALESCE(`src`.`col1`, \'\')  AND (COALESCE(`dest`.`col1`, \'\') != COALESCE(`src`.`col1`, \'\') OR COALESCE(`dest`.`col2`, \'\') != COALESCE(`src`.`col2`, \'\'))',
+            'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = IF(`src`.`col1` = \'\', NULL, `src`.`col1`), `col2` = COALESCE(`src`.`col2`, \'\') FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE COALESCE(`dest`.`col1`, \'\') = COALESCE(`src`.`col1`, \'\')  AND (COALESCE(`dest`.`col1`, \'\') != COALESCE(`src`.`col1`, \'\') OR COALESCE(`dest`.`col2`, \'\') != COALESCE(`src`.`col2`, \'\'))',
         ];
     }
 
@@ -867,7 +867,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         yield 'string' => [
             BigqueryImportOptions::USING_TYPES_STRING,
             // phpcs:ignore
-            'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = IF(`src`.`col1` = \'\', NULL, `src`.`col1`), `col2` = COALESCE(`src`.`col2`, \'\'), `_timestamp` = \'2020-01-01 01:01:01\' FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE `dest`.`col1` = COALESCE(`src`.`col1`, \'\')  AND (COALESCE(`dest`.`col1`, \'\') != COALESCE(`src`.`col1`, \'\') OR COALESCE(`dest`.`col2`, \'\') != COALESCE(`src`.`col2`, \'\'))',
+            'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = IF(`src`.`col1` = \'\', NULL, `src`.`col1`), `col2` = COALESCE(`src`.`col2`, \'\'), `_timestamp` = \'2020-01-01 01:01:01\' FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE COALESCE(`dest`.`col1`, \'\') = COALESCE(`src`.`col1`, \'\')  AND (COALESCE(`dest`.`col1`, \'\') != COALESCE(`src`.`col1`, \'\') OR COALESCE(`dest`.`col2`, \'\') != COALESCE(`src`.`col2`, \'\'))',
         ];
     }
 
@@ -1325,7 +1325,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         // col2 is STRING so no CAST
         self::assertSqlEquals(
             // phpcs:ignore
-            'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = CAST(COALESCE(`src`.`col1`, \'\') AS INT64), `col2` = COALESCE(`src`.`col2`, \'\') FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE CAST(`dest`.`col1` AS STRING) = COALESCE(`src`.`col1`, \'\')  AND (CAST(`dest`.`col1` AS STRING) != COALESCE(`src`.`col1`, \'\') OR COALESCE(`dest`.`col2`, \'\') != COALESCE(`src`.`col2`, \'\'))',
+            'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = CAST(COALESCE(`src`.`col1`, \'\') AS INT64), `col2` = COALESCE(`src`.`col2`, \'\') FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE COALESCE(CAST(`dest`.`col1` AS STRING), \'\') = COALESCE(`src`.`col1`, \'\')  AND (COALESCE(CAST(`dest`.`col1` AS STRING), \'\') != COALESCE(`src`.`col1`, \'\') OR COALESCE(`dest`.`col2`, \'\') != COALESCE(`src`.`col2`, \'\'))',
             $sql,
         );
 
@@ -1415,7 +1415,7 @@ class SqlBuildTest extends BigqueryBaseTestCase
         // col1 SET uses IF+CAST(..AS INT64), col2 no CAST (STRING dest)
         self::assertSqlEquals(
             // phpcs:ignore
-            'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = CAST(IF(`src`.`col1` = \'\', NULL, `src`.`col1`) AS INT64), `col2` = COALESCE(`src`.`col2`, \'\') FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE CAST(`dest`.`col1` AS STRING) = COALESCE(`src`.`col1`, \'\')  AND (CAST(`dest`.`col1` AS STRING) != COALESCE(`src`.`col1`, \'\') OR COALESCE(`dest`.`col2`, \'\') != COALESCE(`src`.`col2`, \'\'))',
+            'UPDATE `import_export_test_schema`.`import_export_test_test` AS `dest` SET `col1` = CAST(IF(`src`.`col1` = \'\', NULL, `src`.`col1`) AS INT64), `col2` = COALESCE(`src`.`col2`, \'\') FROM `import_export_test_schema`.`stagingTable` AS `src` WHERE COALESCE(CAST(`dest`.`col1` AS STRING), \'\') = COALESCE(`src`.`col1`, \'\')  AND (COALESCE(CAST(`dest`.`col1` AS STRING), \'\') != COALESCE(`src`.`col1`, \'\') OR COALESCE(`dest`.`col2`, \'\') != COALESCE(`src`.`col2`, \'\'))',
             $sql,
         );
 
