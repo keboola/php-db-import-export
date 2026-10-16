@@ -647,8 +647,8 @@ SQL,
                     $destSql = sprintf('CAST(%s AS STRING)', $destSql);
                 }
                 if ($destColNullable) {
-                    // a nullable workspace key stores an empty value as NULL (convertEmptyValuesToNull) and
-                    // NULL = x is never true; a REQUIRED key, as in every Storage table, keeps the plain join
+                    // a nullable key can hold NULL (e.g. a workspace key with convertEmptyValuesToNull) and
+                    // NULL = x is never true; a REQUIRED key keeps the plain join
                     $destSql = sprintf('COALESCE(%s, \'\')', $destSql);
                 }
 
@@ -668,8 +668,8 @@ SQL,
      * Distinct partition units of the whole source table, formatted as PartitionAwareImportFilter expects.
      * SAFE_CAST: string-table sources hold the canonical text of the typed destination value; text that
      * fails to cast cannot equal CAST(dest AS STRING) in the PK join, so dropping it loses no match.
-     * Only Storage table imports use this, and their primary key (which holds the partition column) is REQUIRED,
-     * so the NULL-safe join of a nullable key does not apply.
+     * A nullable primary key also matches NULL against '' in the PK join; the pruning predicate on the bare
+     * partition column excludes NULL partitions, so partition-aware import assumes a REQUIRED partition column.
      */
     public function getSelectDistinctPartitionValuesCommand(
         BigqueryTableDefinition $sourceTableDefinition,

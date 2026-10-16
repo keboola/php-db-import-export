@@ -328,12 +328,12 @@ class SqlBuilderTest extends TestCase
     }
 
     /**
-     * String table (cross-backend load): the PK join compares CAST(dest AS STRING), but the pruning
+     * String import into a typed destination: the PK join compares CAST(dest AS STRING), but the pruning
      * conjunct must use the bare destination column with typed literals or BigQuery cannot prune.
      */
     public function testPartitionFilterIsAppendedOnBareDestinationColumnForStringTable(): void
     {
-        // a Storage table: primary key columns are REQUIRED
+        // partition-aware import targets Storage tables, whose primary key columns are REQUIRED
         $destination = $this->table('out.c-main', 'dest', [
             $this->col('id', Bigquery::TYPE_STRING, ['nullable' => false]),
             $this->col('day', Bigquery::TYPE_DATE, ['nullable' => false]),
