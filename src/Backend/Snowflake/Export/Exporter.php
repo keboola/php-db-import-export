@@ -44,10 +44,9 @@ class Exporter implements ExporterInterface
         ExportOptionsInterface $options,
     ): array {
         $timezone = $options->getTimezone();
-        // Snowflake does not support unloading TIMESTAMP_LTZ/TZ columns to Parquet.
-        // Timezone conversion via ALTER SESSION SET TIMEZONE only affects LTZ display,
-        // so it has no effect on Parquet exports (which only support NTZ).
-        // Supporting this would require casting LTZ to NTZ with CONVERT_TIMEZONE in the query.
+        // Snowflake does not support unloading TIMESTAMP_LTZ/TZ columns to Parquet, so the source
+        // query must already deliver them as NTZ. ALTER SESSION SET TIMEZONE only affects LTZ display
+        // and would have no effect on such a query.
         if ($timezone !== null && $options->getFileType() === ExportFileType::PARQUET) {
             throw new Exception('Timezone option is not supported for Parquet exports.');
         }
