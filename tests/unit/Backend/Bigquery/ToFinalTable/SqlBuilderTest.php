@@ -21,9 +21,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Covers the bigquery-optimized-import feature gate: with the feature OFF, SqlBuilder must
- * produce byte-identical SQL to the pre-existing implementation. With the feature ON, it must
- * produce the aggregation-based dedup / CLUSTER BY / MERGE SQL.
+ * Exact SQL of the aggregation-based dedup / CLUSTER BY / MERGE import path.
  */
 class SqlBuilderTest extends TestCase
 {
@@ -53,33 +51,6 @@ class SqlBuilderTest extends TestCase
         return new BigqueryTableDefinition($schema, $tableName, false, new ColumnCollection($columns), $primaryKeys);
     }
 
-    public function testGetCreateDedupTableOffIsUnchanged(): void
-    {
-        $staging = $this->table('in.c-main', 'stage', [
-            $this->col('id', Bigquery::TYPE_STRING),
-            $this->col('name', Bigquery::TYPE_STRING),
-        ]);
-
-        $sql = $this->getInstance()->getCreateDedupTable($staging, 'dedup_1', ['id']);
-
-        // phpcs:disable Generic.Files.LineLength.MaxExceeded
-        self::assertSame(
-            <<<SQL
-            CREATE OR REPLACE TABLE `in.c-main`.`dedup_1` AS
-            SELECT a.`id`,a.`name` FROM (
-                SELECT src.`id`, src.`name`, ROW_NUMBER() OVER (PARTITION BY src.`id` ORDER BY src.`id`) AS `_row_number_`
-                FROM `in.c-main`.`stage` as src
-            ) AS a
-                WHERE a.`_row_number_` = 1
-            SQL,
-            $sql,
-        );
-        // phpcs:enable Generic.Files.LineLength.MaxExceeded
-
-        // explicit false must match the default (no behavior change)
-        self::assertSame($sql, $this->getInstance()->getCreateDedupTable($staging, 'dedup_1', ['id'], false));
-    }
-
     public function testGetCreateDedupTableOptimizedSingleClusterablePk(): void
     {
         $staging = $this->table('in.c-main', 'stage', [
@@ -87,7 +58,7 @@ class SqlBuilderTest extends TestCase
             $this->col('name', Bigquery::TYPE_STRING),
         ]);
 
-        $sql = $this->getInstance()->getCreateDedupTable($staging, 'dedup_1', ['id'], true);
+        $sql = $this->getInstance()->getCreateDedupTable($staging, 'dedup_1', ['id']);
 
         self::assertSame(
             <<<SQL
@@ -109,7 +80,7 @@ class SqlBuilderTest extends TestCase
             $this->col('name', Bigquery::TYPE_STRING),
         ]);
 
-        $sql = $this->getInstance()->getCreateDedupTable($staging, 'dedup_2', ['id', 'geo'], true);
+        $sql = $this->getInstance()->getCreateDedupTable($staging, 'dedup_2', ['id', 'geo']);
 
         // no CLUSTER BY clause: one PK column (geo) is not a clusterable type
         self::assertSame(
@@ -139,7 +110,6 @@ class SqlBuilderTest extends TestCase
             $staging,
             'dedup_3',
             ['pk1', 'pk2', 'pk3', 'pk4', 'pk5'],
-            true,
         );
 
         // CLUSTER BY is capped at 4 columns, but GROUP BY still dedups on the full PK
@@ -166,7 +136,7 @@ class SqlBuilderTest extends TestCase
             $this->col('name', Bigquery::TYPE_STRING),
         ]);
 
-        $sql = $this->getInstance()->getCreateDedupTable($staging, 'dedup_6', ['src'], true);
+        $sql = $this->getInstance()->getCreateDedupTable($staging, 'dedup_6', ['src']);
 
         self::assertSame(
             <<<SQL
@@ -251,7 +221,7 @@ class SqlBuilderTest extends TestCase
     }
 
     /**
-     * Pre-existing behavior carried over unchanged from getUpdateWithPkCommand(): for typed tables,
+     * For typed tables,
      * usingUserDefinedTypes() short-circuits getColumnsComparisonSql() before the FromSource check,
      * so _timestamp IS still compared here despite TimestampMode::FromSource. The exclusion only
      * applies on the untyped (string-table) branch.
@@ -285,37 +255,6 @@ class SqlBuilderTest extends TestCase
             . 'THEN UPDATE SET `id` = `src`.`id`, `name` = `src`.`name`, `_timestamp` = `src`.`_timestamp` '
             . 'WHEN NOT MATCHED THEN INSERT (`id`, `name`, `_timestamp`) '
             . 'VALUES (`src`.`id`,`src`.`name`,`src`.`_timestamp`)',
-            $sql,
-        );
-    }
-
-    /**
-     * Regression check: extracting getColumnsSetForUpdate()/getColumnsComparisonSql() out of
-     * getUpdateWithPkCommand() (to share with getMergeCommand()) must not change its output.
-     */
-    public function testGetUpdateWithPkCommandUnchangedAfterRefactor(): void
-    {
-        $destination = $this->table('out.c-main', 'dest', [
-            $this->col('id', Bigquery::TYPE_INT64),
-            $this->col('name', Bigquery::TYPE_STRING),
-        ], ['id']);
-        $dedup = $this->table('in.c-main', 'dedup_4', [
-            $this->col('id', Bigquery::TYPE_INT64),
-            $this->col('name', Bigquery::TYPE_STRING),
-        ]);
-        $options = new BigqueryImportOptions(
-            isIncremental: true,
-            useTimestamp: true,
-            usingTypes: BigqueryImportOptions::USING_TYPES_USER,
-        );
-
-        $sql = $this->getInstance()->getUpdateWithPkCommand($dedup, $destination, $options, '2024-01-01 00:00:00');
-
-        self::assertSame(
-            'UPDATE `out.c-main`.`dest` AS `dest` SET `id` = `src`.`id`, `name` = `src`.`name`, '
-            . '`_timestamp` = \'2024-01-01 00:00:00\' FROM `in.c-main`.`dedup_4` AS `src` '
-            . 'WHERE `dest`.`id` = `src`.`id`  AND '
-            . '(`dest`.`id` IS DISTINCT FROM `src`.`id` OR `dest`.`name` IS DISTINCT FROM `src`.`name`)',
             $sql,
         );
     }
@@ -421,23 +360,6 @@ class SqlBuilderTest extends TestCase
             . 'OR CAST(`dest`.`day` AS STRING) != COALESCE(`src`.`day`, \'\') '
             . 'OR COALESCE(`dest`.`name`, \'\') != COALESCE(`src`.`name`, \'\')';
 
-        $deleteWithout = 'DELETE `in.c-main`.`dedup` AS `src` '
-            . 'WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` WHERE ' . $pk . ')';
-        self::assertSame($deleteWithout, $builder->getDeleteOldItemsCommand($dedup, $destination, $options));
-        self::assertSame(
-            'DELETE `in.c-main`.`dedup` AS `src` '
-            . 'WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` WHERE ' . $pk . 'AND ' . $prune . ' )',
-            $builder->getDeleteOldItemsCommand($dedup, $destination, $options, $filter),
-        );
-
-        $updateWithout = 'UPDATE `out.c-main`.`dest` AS `dest` SET ' . $set
-            . ' FROM `in.c-main`.`dedup` AS `src` WHERE ' . $pk . ' AND (' . $compare . ')';
-        self::assertSame($updateWithout, $builder->getUpdateWithPkCommand($dedup, $destination, $options, 'ts'));
-        self::assertSame(
-            $updateWithout . ' AND ' . $prune,
-            $builder->getUpdateWithPkCommand($dedup, $destination, $options, 'ts', $filter),
-        );
-
         $mergeTail = ' WHEN MATCHED AND (' . $compare . ') THEN UPDATE SET ' . $set
             . ' WHEN NOT MATCHED THEN INSERT (`id`, `day`, `name`) VALUES (CAST(COALESCE(`src`.`id`, \'\') as STRING),'
             . 'CAST(COALESCE(`src`.`day`, \'\') as DATE),CAST(COALESCE(`src`.`name`, \'\') as STRING))';
@@ -522,17 +444,17 @@ class SqlBuilderTest extends TestCase
         $dedup = self::partitionedTable('in.c-main', 'dedup', $partitionColumn);
         $options = new BigqueryImportOptions(isIncremental: true, usingTypes: BigqueryImportOptions::USING_TYPES_USER);
 
-        self::assertSame(
+        self::assertStringContainsString(
             sprintf(
-                'DELETE `in.c-main`.`dedup` AS `src` WHERE EXISTS (SELECT * FROM `out.c-main`.`dest` AS `dest` '
-                . 'WHERE `dest`.`id` = `src`.`id` AND `dest`.`%1$s` = `src`.`%1$s` AND %2$s )',
+                ' ON `dest`.`id` = `src`.`id` AND `dest`.`%1$s` = `src`.`%1$s` AND %2$s  WHEN MATCHED',
                 $partitionColumn,
                 $expectedCondition,
             ),
-            $this->getInstance()->getDeleteOldItemsCommand(
+            $this->getInstance()->getMergeCommand(
                 $dedup,
                 $destination,
                 $options,
+                'ts',
                 $this->partitionFilter($destination, $partitioning, $values),
             ),
         );

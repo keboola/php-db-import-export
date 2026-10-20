@@ -310,78 +310,14 @@ SQL,
         );
     }
 
-    public function getDeleteOldItemsCommand(
-        BigqueryTableDefinition $stagingTableDefinition,
-        BigqueryTableDefinition $destinationTableDefinition,
-        BigqueryImportOptions $importOptions,
-        ?PartitionAwareImportFilter $partitionAwareImportFilter = null,
-    ): string {
-        $stagingTable = sprintf(
-            '%s.%s',
-            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
-            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
-        );
-
-        $destinationTable = sprintf(
-            '%s.%s',
-            BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getSchemaName()),
-            BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getTableName()),
-        );
-
-        return sprintf(
-            'DELETE %s AS `src` WHERE EXISTS (SELECT * FROM %s AS `dest` WHERE %s%s)',
-            $stagingTable,
-            $destinationTable,
-            $this->getPrimaryKeyWhereConditions(
-                $destinationTableDefinition->getPrimaryKeysNames(),
-                $importOptions,
-                $destinationTableDefinition,
-            ),
-            $this->getPartitionAwareImportConjunct($partitionAwareImportFilter),
-        );
-    }
-
-    /**
-     * @param string[] $primaryKeys
-     */
-    public function getCreateDedupTable(
-        BigqueryTableDefinition $stagingTableDefinition,
-        string $dedupTableName,
-        array $primaryKeys,
-        bool $useOptimizedImport = false,
-    ): string {
-        if ($useOptimizedImport) {
-            return $this->getCreateDedupTableOptimized(
-                $stagingTableDefinition,
-                $dedupTableName,
-                $primaryKeys,
-            );
-        }
-
-        return sprintf(
-            <<< SQL
-CREATE OR REPLACE TABLE %s.%s AS
-%s
-SQL,
-            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
-            BigqueryQuote::quoteSingleIdentifier($dedupTableName),
-            $this->getDedupSelect(
-                $stagingTableDefinition,
-                $stagingTableDefinition->getColumnsNames(),
-                $primaryKeys,
-            ),
-        );
-    }
-
     /**
      * Aggregation-based dedup: GROUP BY + ANY_VALUE(row) avoids the redundant ORDER BY sort of
      * ROW_NUMBER() OVER (PARTITION BY pk ORDER BY pk), and CLUSTER BY prunes shuffle on the PK join
-     * done later in getMergeCommand()/getUpdateWithPkCommand(). Row selection among PK duplicates is
-     * arbitrary in both the old and new implementation, so this is semantically equivalent.
+     * done later in getMergeCommand(). Row selection among PK duplicates is arbitrary.
      *
      * @param string[] $primaryKeys
      */
-    private function getCreateDedupTableOptimized(
+    public function getCreateDedupTable(
         BigqueryTableDefinition $stagingTableDefinition,
         string $dedupTableName,
         array $primaryKeys,
@@ -470,54 +406,8 @@ SQL,
         );
     }
 
-    public function getUpdateWithPkCommand(
-        BigqueryTableDefinition $stagingTableDefinition,
-        BigqueryTableDefinition $destinationTableDefinition,
-        BigqueryImportOptions $importOptions,
-        string $timestampValue,
-        ?PartitionAwareImportFilter $partitionAwareImportFilter = null,
-    ): string {
-        $columnsSet = $this->getColumnsSetForUpdate(
-            $stagingTableDefinition,
-            $destinationTableDefinition,
-            $importOptions,
-            $timestampValue,
-        );
-        $columnsComparisonSql = $this->getColumnsComparisonSql(
-            $stagingTableDefinition,
-            $destinationTableDefinition,
-            $importOptions,
-        );
-
-        $dest = sprintf(
-            '%s.%s',
-            BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getSchemaName()),
-            BigqueryQuote::quoteSingleIdentifier($destinationTableDefinition->getTableName()),
-        );
-
-        return sprintf(
-            'UPDATE %s AS `dest` SET %s FROM %s.%s AS `src` WHERE %s AND (%s)%s',
-            $dest,
-            implode(', ', $columnsSet),
-            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
-            BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
-            $this->getPrimaryKeyWhereConditions(
-                $destinationTableDefinition->getPrimaryKeysNames(),
-                $importOptions,
-                $destinationTableDefinition,
-            ),
-            implode(' OR ', $columnsComparisonSql),
-            $partitionAwareImportFilter === null
-                ? ''
-                : ' AND ' . $this->getPartitionAwareImportCondition($partitionAwareImportFilter),
-        );
-    }
-
     /**
-     * MERGE replacing UPDATE+DELETE+INSERT for the PK dedup path: a single atomic statement,
-     * so no explicit BEGIN/COMMIT transaction is required around it (see IncrementalImporter).
-     * Reuses the exact same column-set/comparison/insert-value expressions as the legacy path
-     * to guarantee semantic equivalence.
+     * Single atomic upsert for the PK dedup path, so no explicit BEGIN/COMMIT is required around it.
      */
     public function getMergeCommand(
         BigqueryTableDefinition $stagingTableDefinition,
