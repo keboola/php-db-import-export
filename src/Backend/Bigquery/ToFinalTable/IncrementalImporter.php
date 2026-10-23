@@ -169,13 +169,13 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
             }
             throw $e;
         } finally {
-            if (isset($deduplicationTableDefinition)) {
-                // drop dedup table
+            if (isset($deduplicationTableName)) {
+                // drop by name, so a failed reflection after the CTAS does not leak the dedup table
                 $this->bqClient->runQuery(
                     $this->bqClient->query(
                         $this->sqlBuilder->getDropTableIfExistsCommand(
-                            $deduplicationTableDefinition->getSchemaName(),
-                            $deduplicationTableDefinition->getTableName(),
+                            $stagingTableDefinition->getSchemaName(),
+                            $deduplicationTableName,
                         ),
                     ),
                 );

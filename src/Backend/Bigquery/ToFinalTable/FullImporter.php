@@ -216,18 +216,16 @@ final class FullImporter implements ToFinalTableImporterInterface
             }
             throw $e;
         } finally {
-            if (isset($deduplicationTableDefinition)) {
-                // 5 drop dedup table
-                $this->bqClient->runQuery(
-                    $this->bqClient->query(
-                        $this->sqlBuilder->getDropTableIfExistsCommand(
-                            $deduplicationTableDefinition->getSchemaName(),
-                            $deduplicationTableDefinition->getTableName(),
-                        ),
-                        $session->getAsQueryOptions(),
+            // 5 drop dedup table by name, so a failed reflection after the CTAS does not leak it
+            $this->bqClient->runQuery(
+                $this->bqClient->query(
+                    $this->sqlBuilder->getDropTableIfExistsCommand(
+                        $stagingTableDefinition->getSchemaName(),
+                        $deduplicationTableName,
                     ),
-                );
-            }
+                    $session->getAsQueryOptions(),
+                ),
+            );
         }
     }
 }

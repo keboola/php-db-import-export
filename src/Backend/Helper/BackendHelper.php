@@ -6,6 +6,9 @@ namespace Keboola\Db\ImportExport\Backend\Helper;
 
 class BackendHelper
 {
+    // Staging and dedup tables are dropped after each import; the expiration only removes leaked ones.
+    public const TEMP_TABLE_EXPIRATION_HOURS = 72;
+
     /**
      * @deprecated use generateStagingTableName
      */

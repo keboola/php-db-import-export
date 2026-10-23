@@ -63,7 +63,8 @@ class SqlBuilderTest extends TestCase
         self::assertSame(
             <<<SQL
             CREATE OR REPLACE TABLE `in.c-main`.`dedup_1`
-            CLUSTER BY `id` AS
+            CLUSTER BY `id` OPTIONS(expiration_timestamp=TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 72 HOUR))
+            AS
             SELECT `a`.`id`, `a`.`name` FROM (
                 SELECT ANY_VALUE(`src`) AS `a` FROM `in.c-main`.`stage` AS `src` GROUP BY src.`id`
             )
@@ -86,6 +87,7 @@ class SqlBuilderTest extends TestCase
         self::assertSame(
             <<<SQL
             CREATE OR REPLACE TABLE `in.c-main`.`dedup_2`
+            OPTIONS(expiration_timestamp=TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 72 HOUR))
             AS
             SELECT `a`.`id`, `a`.`geo`, `a`.`name` FROM (
                 SELECT ANY_VALUE(`src`) AS `a` FROM `in.c-main`.`stage` AS `src` GROUP BY src.`id`, src.`geo`
@@ -117,7 +119,8 @@ class SqlBuilderTest extends TestCase
         self::assertSame(
             <<<SQL
             CREATE OR REPLACE TABLE `in.c-main`.`dedup_3`
-            CLUSTER BY `pk1`, `pk2`, `pk3`, `pk4` AS
+            CLUSTER BY `pk1`, `pk2`, `pk3`, `pk4` OPTIONS(expiration_timestamp=TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 72 HOUR))
+            AS
             SELECT `a`.`pk1`, `a`.`pk2`, `a`.`pk3`, `a`.`pk4`, `a`.`pk5`, `a`.`val` FROM (
                 SELECT ANY_VALUE(`src`) AS `a` FROM `in.c-main`.`stage` AS `src` GROUP BY src.`pk1`, src.`pk2`, src.`pk3`, src.`pk4`, src.`pk5`
             )
@@ -141,7 +144,8 @@ class SqlBuilderTest extends TestCase
         self::assertSame(
             <<<SQL
             CREATE OR REPLACE TABLE `in.c-main`.`dedup_6`
-            CLUSTER BY `src` AS
+            CLUSTER BY `src` OPTIONS(expiration_timestamp=TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 72 HOUR))
+            AS
             SELECT `a_`.`src`, `a_`.`a`, `a_`.`name` FROM (
                 SELECT ANY_VALUE(`src_`) AS `a_` FROM `in.c-main`.`stage` AS `src_` GROUP BY src_.`src`
             )

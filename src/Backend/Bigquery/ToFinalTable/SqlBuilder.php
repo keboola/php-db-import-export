@@ -10,11 +10,13 @@ use Keboola\Datatype\Definition\BaseType;
 use Keboola\Datatype\Definition\Bigquery;
 use Keboola\Db\Import\Exception;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryImportOptions;
+use Keboola\Db\ImportExport\Backend\Helper\BackendHelper;
 use Keboola\Db\ImportExport\Backend\TimestampMode;
 use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
 use Keboola\TableBackendUtils\Column\Bigquery\BigqueryColumn;
 use Keboola\TableBackendUtils\Escaping\Bigquery\BigqueryQuote;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableDefinition;
+use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableQueryBuilder;
 use LogicException;
 
 class SqlBuilder
@@ -357,7 +359,8 @@ SQL,
         return sprintf(
             <<< SQL
 CREATE OR REPLACE TABLE %s.%s
-%sAS
+%s%s
+AS
 SELECT %s FROM (
     SELECT ANY_VALUE(%s) AS %s FROM %s AS %s GROUP BY %s
 )
@@ -365,6 +368,7 @@ SQL,
             BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
             BigqueryQuote::quoteSingleIdentifier($dedupTableName),
             $clusterByClause,
+            BigqueryTableQueryBuilder::getExpirationOptionsSql(BackendHelper::TEMP_TABLE_EXPIRATION_HOURS),
             $columnsSql,
             BigqueryQuote::quoteSingleIdentifier($srcAlias),
             BigqueryQuote::quoteSingleIdentifier($rowAlias),

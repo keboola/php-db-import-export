@@ -231,6 +231,11 @@ class FullImportTest extends BigqueryBaseTestCase
 
         $destinationRef->refresh();
         self::assertEquals(4, $destinationRef->getRowsCount());
+        self::assertArrayNotHasKey(
+            'expirationTime',
+            $this->bqClient->dataset($this->getDestinationDbName())->table(self::TABLE_SINGLE_PK)->info(),
+            'Only temporary tables may expire, never the destination.',
+        );
     }
 
     public function testLoadToTableWithDedupWithMultiPK(): void
