@@ -147,6 +147,8 @@ final class FullImporter implements ToFinalTableImporterInterface
         // 1. Create table for deduplication
         $deduplicationTableName = BackendHelper::generateTempDedupTableName();
 
+        $importFailed = false;
+
         try {
             $transactionStarted = false;
             // 2 transfer data from source to dedup table with dedup process
@@ -207,6 +209,7 @@ final class FullImporter implements ToFinalTableImporterInterface
                 ),
             );
         } catch (Throwable $e) {
+            $importFailed = true;
             if ($transactionStarted) {
                 RollbackTransactionHelper::rollbackTransaction(
                     $this->bqClient,
@@ -217,15 +220,22 @@ final class FullImporter implements ToFinalTableImporterInterface
             throw $e;
         } finally {
             // 5 drop dedup table by name, so a failed reflection after the CTAS does not leak it
-            $this->bqClient->runQuery(
-                $this->bqClient->query(
-                    $this->sqlBuilder->getDropTableIfExistsCommand(
-                        $stagingTableDefinition->getSchemaName(),
-                        $deduplicationTableName,
+            try {
+                $this->bqClient->runQuery(
+                    $this->bqClient->query(
+                        $this->sqlBuilder->getDropTableIfExistsCommand(
+                            $stagingTableDefinition->getSchemaName(),
+                            $deduplicationTableName,
+                        ),
+                        $session->getAsQueryOptions(),
                     ),
-                    $session->getAsQueryOptions(),
-                ),
-            );
+                );
+            } catch (Throwable $cleanupException) {
+                // never let the cleanup failure replace the original import error
+                if (!$importFailed) {
+                    throw $cleanupException;
+                }
+            }
         }
     }
 }
