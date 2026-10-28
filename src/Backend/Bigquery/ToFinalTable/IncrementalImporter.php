@@ -63,6 +63,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         if ($session === null) {
             $session = (new SessionFactory($this->bqClient))->createSession();
         }
+        $importFailed = false;
         try {
             $transactionStarted = false;
             if (!empty($destinationTableDefinition->getPrimaryKeysNames())) {
@@ -151,6 +152,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
 
             $state->setImportedColumns($stagingTableDefinition->getColumnsNames());
         } catch (JobException|ServiceException $e) {
+            $importFailed = true;
             if ($transactionStarted) {
                 RollbackTransactionHelper::rollbackTransaction(
                     $this->bqClient,
@@ -160,6 +162,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
             }
             throw BigqueryException::covertException($e);
         } catch (Throwable $e) {
+            $importFailed = true;
             if ($transactionStarted) {
                 RollbackTransactionHelper::rollbackTransaction(
                     $this->bqClient,
@@ -171,14 +174,21 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         } finally {
             if (isset($deduplicationTableName)) {
                 // drop by name, so a failed reflection after the CTAS does not leak the dedup table
-                $this->bqClient->runQuery(
-                    $this->bqClient->query(
-                        $this->sqlBuilder->getDropTableIfExistsCommand(
-                            $stagingTableDefinition->getSchemaName(),
-                            $deduplicationTableName,
+                try {
+                    $this->bqClient->runQuery(
+                        $this->bqClient->query(
+                            $this->sqlBuilder->getDropTableIfExistsCommand(
+                                $stagingTableDefinition->getSchemaName(),
+                                $deduplicationTableName,
+                            ),
                         ),
-                    ),
-                );
+                    );
+                } catch (Throwable $cleanupException) {
+                    // never let the cleanup failure replace the original import error
+                    if (!$importFailed) {
+                        throw $cleanupException;
+                    }
+                }
             }
         }
 
