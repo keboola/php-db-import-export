@@ -181,6 +181,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                                 $stagingTableDefinition->getSchemaName(),
                                 $deduplicationTableName,
                             ),
+                            $session->getAsQueryOptions(),
                         ),
                     );
                 } catch (Throwable $cleanupException) {
