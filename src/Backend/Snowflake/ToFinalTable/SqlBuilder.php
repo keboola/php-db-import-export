@@ -13,6 +13,7 @@ use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
 use Keboola\TableBackendUtils\Column\Snowflake\SnowflakeColumn;
 use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableDefinition;
+use LogicException;
 
 class SqlBuilder
 {
@@ -400,7 +401,7 @@ class SqlBuilder
                 return $column->getColumnDefinition()->getBasetype() === BaseType::STRING;
             }
         }
-        throw new \LogicException(sprintf('Destination column "%s" not found.', $columnName));
+        throw new LogicException(sprintf('Destination column "%s" not found.', $columnName));
     }
 
     private function getTableReference(SnowflakeTableDefinition $tableDefinition): string
