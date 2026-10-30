@@ -68,16 +68,18 @@ class IncrementalImportTest extends SnowflakeBaseTestCase
     }
 
     /**
+     * Snowflake makes primary key columns NOT NULL, so only a string key can carry a NULL (stored as '').
+     *
      * @param string[] $features
      */
     #[DataProvider('typedTableFeatures')]
-    public function testTypedNullManipulationMatchesNullIntegerKey(array $features): void
+    public function testTypedNullManipulationMatchesNullStringKey(array $features): void
     {
         $schema = SnowflakeQuote::quoteSingleIdentifier($this->getDestinationSchemaName());
         $destinationRef = $schema . '."typed_null_destination"';
         $stagingRef = $schema . '."typed_null_staging"';
         $this->connection->executeStatement(sprintf(
-            'CREATE TABLE %s ("ID" INT, "TS" TIMESTAMP_NTZ, "STR" VARCHAR, PRIMARY KEY ("ID"))',
+            'CREATE TABLE %s ("ID" INT, "TS" TIMESTAMP_NTZ, "STR" VARCHAR, PRIMARY KEY ("STR"))',
             $destinationRef,
         ));
         $this->connection->executeStatement(sprintf(
@@ -85,7 +87,7 @@ class IncrementalImportTest extends SnowflakeBaseTestCase
             $stagingRef,
         ));
         $this->connection->executeStatement(sprintf(
-            'INSERT INTO %s VALUES (NULL, NULL, NULL), (1, NULL, NULL)',
+            'INSERT INTO %s VALUES (NULL, NULL, NULL), (1, NULL, \'a\')',
             $stagingRef,
         ));
         $destination = (new SnowflakeTableReflection(
@@ -109,17 +111,17 @@ class IncrementalImportTest extends SnowflakeBaseTestCase
         $importer->importToTable($staging, $destination, $options, new ImportState($staging->getTableName()));
         self::assertSame([
             ['ID' => null, 'TS' => null, 'STR' => ''],
-            ['ID' => '1', 'TS' => null, 'STR' => ''],
+            ['ID' => '1', 'TS' => null, 'STR' => 'a'],
         ], $this->connection->fetchAllAssociative(sprintf(
-            'SELECT TO_VARCHAR("ID") AS "ID", "TS", "STR" FROM %s ORDER BY "ID" NULLS FIRST',
+            'SELECT TO_VARCHAR("ID") AS "ID", "TS", "STR" FROM %s ORDER BY "STR"',
             $destinationRef,
         )));
 
         $stream = $schema . '."typed_null_changes"';
         $this->connection->executeStatement(sprintf('CREATE STREAM %s ON TABLE %s', $stream, $destinationRef));
         $importer->importToTable($staging, $destination, $options, new ImportState($staging->getTableName()));
-        self::assertSame(2, (int) $this->connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s', $destinationRef)));
-        self::assertSame(0, (int) $this->connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s', $stream)));
+        self::assertEquals(2, $this->connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s', $destinationRef)));
+        self::assertEquals(0, $this->connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s', $stream)));
     }
 
     /**
