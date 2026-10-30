@@ -128,24 +128,25 @@ class SqlBuilder
             $stagingTable,
             $destinationTable,
             $this->getPrimayKeyWhereConditions(
-                $destinationTableDefinition->getPrimaryKeysNames(),
+                $destinationTableDefinition,
                 $importOptions,
             ),
         );
     }
 
-    /**
-     * @param string[] $primaryKeys
-     */
     private function getPrimayKeyWhereConditions(
-        array $primaryKeys,
+        SnowflakeTableDefinition $destinationTableDefinition,
         SnowflakeImportOptions $importOptions,
     ): string {
         $pkWhereSql = array_map(
-            function (string $col) use ($importOptions) {
+            function (string $col) use ($destinationTableDefinition, $importOptions) {
                 $str = '"dest".%s = COALESCE("src".%s, \'\')';
                 if (!$importOptions->isNullManipulationEnabled()) {
                     $str = '"dest".%s = "src".%s';
+                } elseif ($importOptions->usingUserDefinedTypes()
+                    && !$this->isStringColumn($destinationTableDefinition, $col)
+                ) {
+                    $str = 'EQUAL_NULL("dest".%s, "src".%s)';
                 }
                 return sprintf(
                     $str,
@@ -153,7 +154,7 @@ class SqlBuilder
                     QuoteHelper::quoteIdentifier($col),
                 );
             },
-            $primaryKeys,
+            $destinationTableDefinition->getPrimaryKeysNames(),
         );
 
         return implode(' AND ', $pkWhereSql) . ' ';
@@ -273,6 +274,7 @@ class SqlBuilder
             $this->getDedupQualifyClause(
                 $destinationTableDefinition->getPrimaryKeysNames(),
                 $importOptions->isNullManipulationEnabled(),
+                $importOptions->usingUserDefinedTypes() ? $destinationTableDefinition : null,
             ),
         );
 
@@ -290,7 +292,7 @@ class SqlBuilder
             $source,
             SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS),
             $this->getPrimayKeyWhereConditions(
-                $destinationTableDefinition->getPrimaryKeysNames(),
+                $destinationTableDefinition,
                 $importOptions,
             ),
             $matchedCondition,
@@ -314,12 +316,17 @@ class SqlBuilder
     private function getDedupQualifyClause(
         array $primaryKeys,
         bool $normalizeNullsToEmptyString = false,
+        ?SnowflakeTableDefinition $destinationTableDefinition = null,
     ): string {
         if ($primaryKeys === []) {
             return '';
         }
 
-        $pkSql = $this->getDedupKeyExpressions($primaryKeys, $normalizeNullsToEmptyString);
+        $pkSql = $this->getDedupKeyExpressions(
+            $primaryKeys,
+            $normalizeNullsToEmptyString,
+            $destinationTableDefinition,
+        );
 
         return sprintf(
             ' QUALIFY ROW_NUMBER() OVER (PARTITION BY %s ORDER BY %s) = 1',
@@ -344,6 +351,7 @@ class SqlBuilder
         $pkSql = $this->getDedupKeyExpressions(
             $primaryKeys,
             $importOptions->isNullManipulationEnabled(),
+            $importOptions->usingUserDefinedTypes() ? $stagingTableDefinition : null,
         );
 
         return sprintf(
@@ -362,20 +370,37 @@ class SqlBuilder
     private function getDedupKeyExpressions(
         array $primaryKeys,
         bool $normalizeNullsToEmptyString,
+        ?SnowflakeTableDefinition $destinationTableDefinition = null,
     ): string {
         // the source alias is quoted in the FROM clause, so the references must be quoted too -
         // an unquoted `src` would be resolved as SRC and would not match the quoted alias
         $sourceAlias = SnowflakeQuote::quoteSingleIdentifier(self::SRC_ALIAS);
 
         return implode(', ', array_map(
-            static function (string $columnName) use ($sourceAlias, $normalizeNullsToEmptyString): string {
+            function (string $columnName) use (
+                $sourceAlias,
+                $normalizeNullsToEmptyString,
+                $destinationTableDefinition,
+            ): string {
                 $reference = $sourceAlias . '.' . SnowflakeQuote::quoteSingleIdentifier($columnName);
                 return $normalizeNullsToEmptyString
+                    && ($destinationTableDefinition === null
+                        || $this->isStringColumn($destinationTableDefinition, $columnName))
                     ? sprintf('COALESCE(%s, \'\')', $reference)
                     : $reference;
             },
             $primaryKeys,
         ));
+    }
+
+    private function isStringColumn(SnowflakeTableDefinition $destination, string $columnName): bool
+    {
+        foreach ($destination->getColumnsDefinitions() as $column) {
+            if ($column->getColumnName() === $columnName) {
+                return $column->getColumnDefinition()->getBasetype() === BaseType::STRING;
+            }
+        }
+        throw new \LogicException(sprintf('Destination column "%s" not found.', $columnName));
     }
 
     private function getTableReference(SnowflakeTableDefinition $tableDefinition): string
@@ -495,7 +520,7 @@ class SqlBuilder
 
             // for string base type convert null values to empty string ''
             //phpcs:ignore
-            if (!$importOptions->usingUserDefinedTypes() && $sourceColumn->getColumnDefinition()->getBasetype() === BaseType::STRING) {
+            if ($sourceColumn->getColumnDefinition()->getBasetype() === BaseType::STRING) {
                 $columnsSetSql[] = sprintf(
                     'COALESCE(%s, \'\')%s',
                     $ref($sourceColumn->getColumnName()),
@@ -628,7 +653,7 @@ class SqlBuilder
                 implode(', ', $columnsSet),
                 QuoteHelper::quoteIdentifier($stagingTableDefinition->getSchemaName()),
                 QuoteHelper::quoteIdentifier($stagingTableDefinition->getTableName()),
-                $this->getPrimayKeyWhereConditions($destinationDefinition->getPrimaryKeysNames(), $importOptions),
+                $this->getPrimayKeyWhereConditions($destinationDefinition, $importOptions),
             );
         }
 
@@ -638,7 +663,7 @@ class SqlBuilder
             implode(', ', $columnsSet),
             QuoteHelper::quoteIdentifier($stagingTableDefinition->getSchemaName()),
             QuoteHelper::quoteIdentifier($stagingTableDefinition->getTableName()),
-            $this->getPrimayKeyWhereConditions($destinationDefinition->getPrimaryKeysNames(), $importOptions),
+            $this->getPrimayKeyWhereConditions($destinationDefinition, $importOptions),
             implode(' OR ', $columnsComparisonSql),
         );
     }
@@ -714,7 +739,15 @@ class SqlBuilder
                 );
                 continue;
             }
-            if (in_array($sourceColumn->getColumnName(), $importOptions->getConvertEmptyValuesToNull(), true)) {
+            if ($importOptions->usingUserDefinedTypes()
+                && !$this->isStringColumn($destinationDefinition, $sourceColumn->getColumnName())
+            ) {
+                $columnsSet[] = sprintf(
+                    '%s = "src".%s',
+                    SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
+                    SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
+                );
+            } elseif (in_array($sourceColumn->getColumnName(), $importOptions->getConvertEmptyValuesToNull(), true)) {
                 $columnsSet[] = sprintf(
                     '%s = IFF("src".%s = \'\', NULL, "src".%s)',
                     SnowflakeQuote::quoteSingleIdentifier($sourceColumn->getColumnName()),
@@ -756,7 +789,16 @@ class SqlBuilder
         if ($importOptions->isNullManipulationEnabled()) {
             // update only changed rows - mysql TIMESTAMP ON UPDATE behaviour simulation
             return array_map(
-                static function ($columnName) {
+                function ($columnName) use ($destinationDefinition, $importOptions) {
+                    if ($importOptions->usingUserDefinedTypes()
+                        && !$this->isStringColumn($destinationDefinition, $columnName)
+                    ) {
+                        return sprintf(
+                            'NOT EQUAL_NULL("dest".%s, "src".%s)',
+                            SnowflakeQuote::quoteSingleIdentifier($columnName),
+                            SnowflakeQuote::quoteSingleIdentifier($columnName),
+                        );
+                    }
                     return sprintf(
                         'COALESCE(TO_VARCHAR("dest".%s), \'\') != COALESCE("src".%s, \'\')',
                         SnowflakeQuote::quoteSingleIdentifier($columnName),
