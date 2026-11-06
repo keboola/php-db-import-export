@@ -111,11 +111,13 @@ class BigqueryException extends Exception
             }
         }
 
-        foreach ($jobErrors as $error) {
-            if (self::isTooManyPartitionsError($error['message'])) {
+        // errorResult alone is enough, `errors` is optional
+        $messages = [$errorMessage, ...array_column($jobErrors, 'message')];
+        foreach ($messages as $message) {
+            if (self::isTooManyPartitionsError($message)) {
                 return new BigqueryInputDataException(sprintf(
                     '%s %s For more information check job "%s" in Google Cloud Console.',
-                    $error['message'],
+                    $message,
                     self::TOO_MANY_PARTITIONS_MESSAGE,
                     $jobInfo['jobReference']['jobId'],
                 ));

@@ -881,6 +881,30 @@ class BigqueryExceptionTest extends TestCase
             },
         ];
 
+        yield 'too many partitions only in errorResult' => [
+            [
+                'jobReference' => [
+                    'projectId' => 'tf2-56',
+                    'jobId' => 'eb64d133-213d-4e99-9cc0-4e37d0c18de9',
+                    'location' => 'US',
+                ],
+                'status' => [
+                    'errorResult' => [
+                        'reason' => 'invalidQuery',
+                        'message' => self::TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE,
+                    ],
+                    'state' => 'DONE',
+                ],
+            ],
+            static function (Throwable $e) {
+                self::assertInstanceOf(BigqueryInputDataException::class, $e);
+                self::assertStringStartsWith(
+                    self::TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE . ' ' . self::TOO_MANY_PARTITIONS_ADVICE,
+                    $e->getMessage(),
+                );
+            },
+        ];
+
         yield 'too many partitions' => [
             [
                 'jobReference' => [
