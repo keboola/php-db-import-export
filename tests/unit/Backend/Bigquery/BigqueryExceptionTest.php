@@ -22,6 +22,12 @@ class BigqueryExceptionTest extends TestCase
     private const ADVICE = 'Reduce the loaded volume, apply retention on the destination table, '
         . 'or use an append-only load.';
 
+    private const TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE = 'Too many partitions produced by query, allowed 4000, '
+        . 'query produces at least 4001 partitions';
+
+    private const TOO_MANY_PARTITIONS_ADVICE = 'A single load touches too many partitions of the destination '
+        . 'table. Use coarser partitioning (e.g. by month), a different partition column, or split the load.';
+
     /**
      * @param mixed[]            $job
      * @param callable(Throwable $throwable): void $expectedThrowableAssertion
@@ -874,6 +880,39 @@ class BigqueryExceptionTest extends TestCase
                 self::assertSame('Query error: something else went wrong', $e->getMessage());
             },
         ];
+
+        yield 'too many partitions' => [
+            [
+                'jobReference' => [
+                    'projectId' => 'tf2-56',
+                    'jobId' => 'eb64d133-213d-4e99-9cc0-4e37d0c18de9',
+                    'location' => 'US',
+                ],
+                'status' => [
+                    'errorResult' => [
+                        'reason' => 'invalidQuery',
+                        'message' => self::TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE,
+                    ],
+                    'errors' => [
+                        [
+                            'reason' => 'invalidQuery',
+                            'message' => self::TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE,
+                        ],
+                    ],
+                    'state' => 'DONE',
+                ],
+            ],
+            static function (Throwable $e) {
+                self::assertInstanceOf(BigqueryInputDataException::class, $e);
+                self::assertNotInstanceOf(BigqueryResourcesExceededException::class, $e);
+                self::assertSame(
+                    self::TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE . ' ' . self::TOO_MANY_PARTITIONS_ADVICE
+                    . ' For more information check job "eb64d133-213d-4e99-9cc0-4e37d0c18de9" '
+                    . 'in Google Cloud Console.',
+                    $e->getMessage(),
+                );
+            },
+        ];
     }
 
     public function testCovertExceptionResourcesExceeded(): void
@@ -1041,5 +1080,51 @@ class BigqueryExceptionTest extends TestCase
 
         self::assertInstanceOf(BigqueryException::class, $e);
         self::assertNotInstanceOf(BigqueryInputDataException::class, $e);
+    }
+
+    public function testCovertExceptionTooManyPartitionsIsUserError(): void
+    {
+        // the exact body from DMD-2744
+        $e = BigqueryException::covertException(new BadRequestException(
+            (string) json_encode([
+                'error' => [
+                    'code' => 400,
+                    'message' => self::TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE,
+                    'errors' => [
+                        [
+                            'message' => self::TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE,
+                            'domain' => 'global',
+                            'reason' => 'invalidQuery',
+                            'location' => 'q',
+                            'locationType' => 'parameter',
+                        ],
+                    ],
+                    'status' => 'INVALID_ARGUMENT',
+                ],
+            ]),
+            400,
+        ));
+
+        self::assertInstanceOf(BigqueryInputDataException::class, $e);
+        self::assertNotInstanceOf(BigqueryResourcesExceededException::class, $e);
+        self::assertSame(
+            self::TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE . ' ' . self::TOO_MANY_PARTITIONS_ADVICE,
+            $e->getMessage(),
+        );
+        self::assertStringNotContainsString('{"error"', $e->getMessage());
+        self::assertInstanceOf(BadRequestException::class, $e->getPrevious());
+    }
+
+    public function testCovertExceptionTooManyPartitionsNonJsonMessageIsKeptIntact(): void
+    {
+        $e = BigqueryException::covertException(
+            new BadRequestException(self::TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE, 400),
+        );
+
+        self::assertInstanceOf(BigqueryInputDataException::class, $e);
+        self::assertSame(
+            self::TOO_MANY_PARTITIONS_BIGQUERY_MESSAGE . ' ' . self::TOO_MANY_PARTITIONS_ADVICE,
+            $e->getMessage(),
+        );
     }
 }

@@ -16,6 +16,9 @@ class BigqueryException extends Exception
     private const RESOURCES_EXCEEDED_MESSAGE = 'Reduce the loaded volume, apply retention on the destination '
         . 'table, or use an append-only load.';
 
+    private const TOO_MANY_PARTITIONS_MESSAGE = 'A single load touches too many partitions of the destination '
+        . 'table. Use coarser partitioning (e.g. by month), a different partition column, or split the load.';
+
     public static function covertException(JobException|ServiceException $e): Throwable
     {
         if ($e instanceof ServiceException) {
@@ -32,6 +35,14 @@ class BigqueryException extends Exception
             if (self::isResourcesExceededError($e->getMessage())) {
                 return new BigqueryResourcesExceededException(
                     self::extractErrorMessage($e->getMessage()) . ' ' . self::RESOURCES_EXCEEDED_MESSAGE,
+                    0,
+                    $e,
+                );
+            }
+            $message = self::extractErrorMessage($e->getMessage());
+            if (self::isTooManyPartitionsError($message)) {
+                return new BigqueryInputDataException(
+                    $message . ' ' . self::TOO_MANY_PARTITIONS_MESSAGE,
                     0,
                     $e,
                 );
@@ -100,6 +111,17 @@ class BigqueryException extends Exception
             }
         }
 
+        foreach ($jobErrors as $error) {
+            if (self::isTooManyPartitionsError($error['message'])) {
+                return new BigqueryInputDataException(sprintf(
+                    '%s %s For more information check job "%s" in Google Cloud Console.',
+                    $error['message'],
+                    self::TOO_MANY_PARTITIONS_MESSAGE,
+                    $jobInfo['jobReference']['jobId'],
+                ));
+            }
+        }
+
         return new self($errorMessage);
     }
 
@@ -124,6 +146,11 @@ class BigqueryException extends Exception
     {
         return str_contains($message, 'resourcesExceeded')
             || str_contains($message, 'maximum disk and memory limit available for shuffle operations');
+    }
+
+    private static function isTooManyPartitionsError(string $message): bool
+    {
+        return str_contains($message, 'Too many partitions produced by query');
     }
 
     private static function isUserError(string $message, string $reason): bool
