@@ -60,10 +60,8 @@ DETAILED_OUTPUT = TRUE%s',
             $exportOptions->getFileType() === ExportFileType::PARQUET ? PHP_EOL . 'HEADER=TRUE' : '',
         );
 
-        $this->connection->executeQuery($sql, $source->getQueryBindings());
-
         /** @var array<array{FILE_NAME: string, FILE_SIZE: string, ROW_COUNT: string}> $unloadedFiles */
-        $unloadedFiles = $this->connection->fetchAllAssociative('select * from table(result_scan(last_query_id()));');
+        $unloadedFiles = $this->connection->executeQuery($sql, $source->getQueryBindings())->fetchAllAssociative();
 
         if ($exportOptions->generateManifest()) {
             (new Storage\GCS\ManifestGenerator\GcsSlicedManifestFromUnloadQueryResultGenerator(
