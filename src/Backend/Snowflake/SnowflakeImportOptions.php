@@ -9,8 +9,7 @@ use Keboola\TableBackendUtils\Escaping\Snowflake\SnowflakeQuote;
 
 class SnowflakeImportOptions extends ImportOptions
 {
-    // single-statement import: one MERGE for incremental loads, one INSERT OVERWRITE for full loads,
-    // duplicates collapsed inline by QUALIFY ROW_NUMBER() instead of through a dedup table
+    // project feature that makes ImportMethod::AUTO resolve to single_statement; read only by ImportMethodResolver
     public const FEATURE_OPTIMIZED_IMPORT = 'snowflake-optimized-import';
 
     /** @var self::SAME_TABLES_* */
@@ -19,6 +18,8 @@ class SnowflakeImportOptions extends ImportOptions
     /** @var self::NULL_MANIPULATION_* */
     private bool $nullManipulation;
 
+    private ResolvedImportMethod $importMethod;
+
     /**
      * @param string[] $convertEmptyValuesToNull
      * @param self::SAME_TABLES_* $requireSameTables
@@ -26,6 +27,7 @@ class SnowflakeImportOptions extends ImportOptions
      * @param string[] $ignoreColumns
      * @param string[] $importAsNull
      * @param string[] $features
+     * @param ResolvedImportMethod|null $importMethod null resolves ImportMethod::AUTO against $features
      */
     public function __construct(
         array $convertEmptyValuesToNull = [],
@@ -37,6 +39,7 @@ class SnowflakeImportOptions extends ImportOptions
         array $ignoreColumns = [],
         array $importAsNull = self::DEFAULT_IMPORT_AS_NULL,
         array $features = [],
+        ?ResolvedImportMethod $importMethod = null,
     ) {
         parent::__construct(
             $convertEmptyValuesToNull,
@@ -50,6 +53,7 @@ class SnowflakeImportOptions extends ImportOptions
         );
         $this->requireSameTables = $requireSameTables;
         $this->nullManipulation = $nullManipulation;
+        $this->importMethod = $importMethod ?? ImportMethodResolver::resolve(ImportMethod::AUTO, $features);
     }
 
     public function isRequireSameTables(): bool
@@ -64,7 +68,12 @@ class SnowflakeImportOptions extends ImportOptions
 
     public function useOptimizedImport(): bool
     {
-        return in_array(self::FEATURE_OPTIMIZED_IMPORT, $this->features(), true);
+        return $this->importMethod->isSingleStatement();
+    }
+
+    public function getImportMethod(): ResolvedImportMethod
+    {
+        return $this->importMethod;
     }
 
     public function getNullIfSql(): string

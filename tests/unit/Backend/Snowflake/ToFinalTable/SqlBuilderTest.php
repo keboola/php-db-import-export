@@ -13,8 +13,8 @@ use Keboola\TableBackendUtils\Table\Snowflake\SnowflakeTableDefinition;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Covers the single-statement import path (MERGE / INSERT OVERWRITE) behind the
- * `snowflake-optimized-import` feature and guards that the default multi-statement path keeps
+ * Covers the single-statement import path (ImportMethod::SINGLE_STATEMENT: MERGE / INSERT OVERWRITE)
+ * and guards that the default multi-statement path keeps
  * emitting byte-identical SQL, since both share the column expression builders.
  */
 class SqlBuilderTest extends TestCase

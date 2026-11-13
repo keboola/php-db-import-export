@@ -11,6 +11,9 @@ use Keboola\Csv\CsvFile;
 use Keboola\Datatype\Definition\Snowflake;
 use Keboola\Db\ImportExport\Backend\Helper\BackendHelper;
 use Keboola\Db\ImportExport\Backend\ImportState;
+use Keboola\Db\ImportExport\Backend\Snowflake\ImportMethod;
+use Keboola\Db\ImportExport\Backend\Snowflake\ImportMethodResolver;
+use Keboola\Db\ImportExport\Backend\Snowflake\ImportMethodSource;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToFinalTable\FullImporter;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToFinalTable\IncrementalImporter;
@@ -32,12 +35,9 @@ use Tests\Keboola\Db\ImportExportFunctional\Snowflake\SnowflakeBaseTestCase;
 
 class IncrementalImportTest extends SnowflakeBaseTestCase
 {
-    /**
-     * @param string[] $features
-     */
     protected static function getSnowflakeIncrementalImportOptions(
         int $skipLines = ImportOptions::SKIP_FIRST_LINE,
-        array $features = [],
+        ImportMethod $importMethod = ImportMethod::AUTO,
     ): SnowflakeImportOptions {
         return new SnowflakeImportOptions(
             convertEmptyValuesToNull: [],
@@ -45,7 +45,7 @@ class IncrementalImportTest extends SnowflakeBaseTestCase
             useTimestamp: true,
             numberOfIgnoredLines: $skipLines,
             ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
-            features: $features,
+            importMethod: ImportMethodResolver::resolve($importMethod, []),
         );
     }
 
@@ -59,21 +59,19 @@ class IncrementalImportTest extends SnowflakeBaseTestCase
     }
 
     /**
-     * @return Generator<string, array{string[]}>
+     * @return Generator<string, array{ImportMethod}>
      */
-    public static function typedTableFeatures(): Generator
+    public static function typedTableImportMethods(): Generator
     {
-        yield 'multi statement' => [[]];
-        yield 'optimized import' => [[SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT]];
+        yield 'multi statement' => [ImportMethod::MULTI_STATEMENT];
+        yield 'single statement' => [ImportMethod::SINGLE_STATEMENT];
     }
 
     /**
      * Snowflake makes primary key columns NOT NULL, so only a string key can carry a NULL (stored as '').
-     *
-     * @param string[] $features
      */
-    #[DataProvider('typedTableFeatures')]
-    public function testTypedNullManipulationMatchesNullStringKey(array $features): void
+    #[DataProvider('typedTableImportMethods')]
+    public function testTypedNullManipulationMatchesNullStringKey(ImportMethod $importMethod): void
     {
         $schema = SnowflakeQuote::quoteSingleIdentifier($this->getDestinationSchemaName());
         $destinationRef = $schema . '."typed_null_destination"';
@@ -105,7 +103,7 @@ class IncrementalImportTest extends SnowflakeBaseTestCase
             useTimestamp: false,
             requireSameTables: SnowflakeImportOptions::SAME_TABLES_REQUIRED,
             nullManipulation: SnowflakeImportOptions::NULL_MANIPULATION_ENABLED,
-            features: $features,
+            importMethod: ImportMethodResolver::resolve($importMethod, []),
         );
         $importer = new IncrementalImporter($this->connection);
         $importer->importToTable($staging, $destination, $options, new ImportState($staging->getTableName()));
@@ -128,11 +126,9 @@ class IncrementalImportTest extends SnowflakeBaseTestCase
      * Test is testing loading of semi-structured data into typed table.
      *
      * This test is not using CSV but inserting data directly into stage table to mimic this behavior
-     *
-     * @param string[] $features
      */
-    #[DataProvider('typedTableFeatures')]
-    public function testLoadTypedTableWithCastingValues(array $features): void
+    #[DataProvider('typedTableImportMethods')]
+    public function testLoadTypedTableWithCastingValues(ImportMethod $importMethod): void
     {
         $this->connection->executeQuery(
             sprintf(
@@ -183,7 +179,7 @@ SELECT 1,
             requireSameTables: SnowflakeImportOptions::SAME_TABLES_NOT_REQUIRED,
             nullManipulation: SnowflakeImportOptions::NULL_MANIPULATION_SKIP,
             ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
-            features: $features,
+            importMethod: ImportMethodResolver::resolve($importMethod, []),
         );
 
         $destinationRef = new SnowflakeTableReflection(
@@ -426,7 +422,7 @@ SELECT 2,
     }
 
     /**
-     * Same scenarios as incrementalImportData(), but with the snowflake-optimized-import feature,
+     * Same scenarios as incrementalImportData(), but with ImportMethod::SINGLE_STATEMENT,
      * which applies the whole load with a single MERGE instead of a dedup table plus
      * UPDATE/DELETE/INSERT. Must produce identical final table contents.
      *
@@ -437,7 +433,7 @@ SELECT 2,
         $accountsStub = static::getParseCsvStub('expectation.tw_accounts.increment.csv');
         $multiPKStub = static::getParseCsvStub('expectation.multi-pk_not-null.increment.csv');
         $multiPKWithNullStub = static::getParseCsvStub('expectation.multi-pk.increment.csv');
-        $features = [SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT];
+        $importMethod = ImportMethod::SINGLE_STATEMENT;
 
         yield 'simple optimized' => [
             static::getSourceInstance(
@@ -447,7 +443,7 @@ SELECT 2,
                 false,
                 ['id'],
             ),
-            static::getSnowflakeImportOptions(ImportOptions::SKIP_FIRST_LINE, true, $features),
+            static::getSnowflakeImportOptions(ImportOptions::SKIP_FIRST_LINE, true, $importMethod),
             static::getSourceInstance(
                 'tw_accounts.increment.csv',
                 $accountsStub->getColumns(),
@@ -455,7 +451,7 @@ SELECT 2,
                 false,
                 ['id'],
             ),
-            static::getSnowflakeIncrementalImportOptions(ImportOptions::SKIP_FIRST_LINE, $features),
+            static::getSnowflakeIncrementalImportOptions(ImportOptions::SKIP_FIRST_LINE, $importMethod),
             [static::getDestinationSchemaName(), 'accounts_3'],
             $accountsStub->getRows(),
             3, // 4 rows in CSV but id=18 is duplicated, so 3 unique PKs
@@ -475,7 +471,7 @@ SELECT 2,
                 useTimestamp: false, // disable timestamp
                 numberOfIgnoredLines: ImportOptions::SKIP_FIRST_LINE,
                 ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
-                features: $features,
+                importMethod: ImportMethodResolver::resolve($importMethod, []),
             ),
             static::getSourceInstance(
                 'tw_accounts.increment.csv',
@@ -490,7 +486,7 @@ SELECT 2,
                 useTimestamp: false, // disable timestamp
                 numberOfIgnoredLines: ImportOptions::SKIP_FIRST_LINE,
                 ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
-                features: $features,
+                importMethod: ImportMethodResolver::resolve($importMethod, []),
             ),
             [static::getDestinationSchemaName(), 'accounts_without_ts'],
             $accountsStub->getRows(),
@@ -505,7 +501,7 @@ SELECT 2,
                 false,
                 ['VisitID', 'Value', 'MenuItem'],
             ),
-            static::getSnowflakeImportOptions(ImportOptions::SKIP_FIRST_LINE, true, $features),
+            static::getSnowflakeImportOptions(ImportOptions::SKIP_FIRST_LINE, true, $importMethod),
             static::getSourceInstance(
                 'multi-pk_not-null.increment.csv',
                 $multiPKStub->getColumns(),
@@ -513,7 +509,7 @@ SELECT 2,
                 false,
                 ['VisitID', 'Value', 'MenuItem'],
             ),
-            static::getSnowflakeIncrementalImportOptions(ImportOptions::SKIP_FIRST_LINE, $features),
+            static::getSnowflakeIncrementalImportOptions(ImportOptions::SKIP_FIRST_LINE, $importMethod),
             [static::getDestinationSchemaName(), 'multi_pk_ts'],
             $multiPKStub->getRows(),
             3,
@@ -533,7 +529,7 @@ SELECT 2,
                 useTimestamp: false, // disable timestamp
                 numberOfIgnoredLines: ImportOptions::SKIP_FIRST_LINE,
                 ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
-                features: $features,
+                importMethod: ImportMethodResolver::resolve($importMethod, []),
             ),
             static::getSourceInstance(
                 'multi-pk.increment.csv',
@@ -542,7 +538,7 @@ SELECT 2,
                 false,
                 ['VisitID', 'Value', 'MenuItem'],
             ),
-            static::getSnowflakeIncrementalImportOptions(ImportOptions::SKIP_FIRST_LINE, $features),
+            static::getSnowflakeIncrementalImportOptions(ImportOptions::SKIP_FIRST_LINE, $importMethod),
             [static::getDestinationSchemaName(), self::TABLE_MULTI_PK_WITH_TS],
             $multiPKWithNullStub->getRows(),
             3, // 4 rows in CSV but (200,,"ukulele") is duplicated, so 3 unique PKs
@@ -558,6 +554,8 @@ SELECT 2,
      * A file source cannot produce this: COPY runs with NULL_IF=() so an empty field arrives as ''. It
      * takes a table source or importAsNull to get a real NULL into a primary key, hence the direct
      * insert into the staging table.
+     *
+     * The options carry only the project feature, so this also runs the AUTO + feature resolution.
      */
     public function testIncrementalImportCountMatchesNullAndEmptyStringPrimaryKeyCollapse(): void
     {
@@ -571,6 +569,8 @@ SELECT 2,
             ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
             features: [SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT],
         );
+        self::assertSame(ImportMethod::SINGLE_STATEMENT, $options->getImportMethod()->method);
+        self::assertSame(ImportMethodSource::PROJECT_FEATURE, $options->getImportMethod()->source);
 
         $destination = (new SnowflakeTableReflection(
             $this->connection,
