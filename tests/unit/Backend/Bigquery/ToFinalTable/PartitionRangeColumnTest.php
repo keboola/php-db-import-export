@@ -61,10 +61,22 @@ class PartitionRangeColumnTest extends TestCase
         ];
         yield 'not partitioned' => [null, null];
         yield 'no partitioning in config' => [new PartitioningConfig(null, null, false), null];
-        yield 'ingestion time' => [new PartitioningConfig(new TimePartitioningConfig('DAY', null, null), null, false), null];
-        yield 'missing column' => [new PartitioningConfig(new TimePartitioningConfig('DAY', null, 'missing'), null, false), null];
-        yield 'unknown granularity' => [new PartitioningConfig(new TimePartitioningConfig('WEEK', null, 'day'), null, false), null];
-        yield 'DATE by hour' => [new PartitioningConfig(new TimePartitioningConfig('HOUR', null, 'day'), null, false), null];
+        yield 'ingestion time' => [
+            new PartitioningConfig(new TimePartitioningConfig('DAY', null, null), null, false),
+            null,
+        ];
+        yield 'missing column' => [
+            new PartitioningConfig(new TimePartitioningConfig('DAY', null, 'missing'), null, false),
+            null,
+        ];
+        yield 'unknown granularity' => [
+            new PartitioningConfig(new TimePartitioningConfig('WEEK', null, 'day'), null, false),
+            null,
+        ];
+        yield 'DATE by hour' => [
+            new PartitioningConfig(new TimePartitioningConfig('HOUR', null, 'day'), null, false),
+            null,
+        ];
         yield 'integer range with non-numeric bound' => [
             new PartitioningConfig(null, new RangePartitioningConfig('bucket', 'oops', '100', '10'), false),
             null,
