@@ -1032,13 +1032,8 @@ select 1,
             );
         }
 
-        self::assertSame(
-            $expectedRowsAfterFailure,
-            (new SnowflakeTableReflection(
-                $this->connection,
-                $this->getDestinationSchemaName(),
-                'failed_full_load',
-            ))->getRowsCount(),
-        );
+        $rowsAfterFailure = $this->connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s."failed_full_load"', $schema));
+        self::assertIsNumeric($rowsAfterFailure);
+        self::assertSame($expectedRowsAfterFailure, (int) $rowsAfterFailure);
     }
 }
