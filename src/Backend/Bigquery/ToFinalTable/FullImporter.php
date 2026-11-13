@@ -26,6 +26,7 @@ final class FullImporter implements ToFinalTableImporterInterface
 {
     private const TIMER_COPY_TO_TARGET = 'copyFromStagingToTarget';
     private const TIMER_DEDUP = 'fromStagingToTargetWithDedup';
+    private const TIMER_PARTITION_RANGES = 'partitionRanges';
 
     private BigQueryClient $bqClient;
 
@@ -44,6 +45,28 @@ final class FullImporter implements ToFinalTableImporterInterface
         ImportState $state,
         Session $session,
     ): void {
+        $state->startTimer(self::TIMER_COPY_TO_TARGET);
+        $this->loadWithPartitionSplit(
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $options,
+            $state,
+            $session,
+        );
+        $state->stopTimer(self::TIMER_COPY_TO_TARGET);
+    }
+
+    /**
+     * @param non-empty-list<string|null> $sourceConditions
+     */
+    private function loadIntoTruncatedTable(
+        BigqueryTableDefinition $sourceTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        BigqueryImportOptions $options,
+        Session $session,
+        string $timestamp,
+        array $sourceConditions,
+    ): void {
         try {
             $this->bqClient->runQuery(
                 $this->bqClient->query(
@@ -51,7 +74,6 @@ final class FullImporter implements ToFinalTableImporterInterface
                     $session->getAsQueryOptions(),
                 ),
             );
-            // truncate destination table
             $this->bqClient->runQuery(
                 $this->bqClient->query(
                     $this->sqlBuilder->getTruncateTable(
@@ -61,19 +83,21 @@ final class FullImporter implements ToFinalTableImporterInterface
                     $session->getAsQueryOptions(),
                 ),
             );
-            $state->startTimer(self::TIMER_COPY_TO_TARGET);// move data with INSERT INTO
-            $sql = $this->sqlBuilder->getInsertAllIntoTargetTableCommand(
-                $stagingTableDefinition,
-                $destinationTableDefinition,
-                $options,
-                DateTimeHelper::getNowFormatted(),
-            );
-            $this->bqClient->runQuery(
-                $this->bqClient->query(
-                    $sql,
-                    $session->getAsQueryOptions(),
-                ),
-            );
+            foreach ($sourceConditions as $sourceCondition) {
+                $sql = $this->sqlBuilder->getInsertAllIntoTargetTableCommand(
+                    $sourceTableDefinition,
+                    $destinationTableDefinition,
+                    $options,
+                    $timestamp,
+                    $sourceCondition,
+                );
+                $this->bqClient->runQuery(
+                    $this->bqClient->query(
+                        $sql,
+                        $session->getAsQueryOptions(),
+                    ),
+                );
+            }
             $this->bqClient->runQuery(
                 $this->bqClient->query(
                     $this->sqlBuilder->getCommitTransaction(),
@@ -88,7 +112,39 @@ final class FullImporter implements ToFinalTableImporterInterface
             );
             throw $e;
         }
-        $state->stopTimer(self::TIMER_COPY_TO_TARGET);
+    }
+
+    private function loadWithPartitionSplit(
+        BigqueryTableDefinition $sourceTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        BigqueryImportOptions $options,
+        ImportState $state,
+        Session $session,
+    ): void {
+        $timestamp = DateTimeHelper::getNowFormatted();
+        try {
+            $this->loadIntoTruncatedTable($sourceTableDefinition, $destinationTableDefinition, $options, $session, $timestamp, [null]);
+        } catch (JobException|ServiceException $e) {
+            if (!BigqueryException::isTooManyPartitionsError($e->getMessage())) {
+                throw $e;
+            }
+            $state->startTimer(self::TIMER_PARTITION_RANGES);
+            $ranges = (new PartitionRangeResolver($this->bqClient, $this->sqlBuilder))
+                ->resolve($session, $sourceTableDefinition, $destinationTableDefinition);
+            $state->stopTimer(self::TIMER_PARTITION_RANGES);
+            if ($ranges === null) {
+                throw $e;
+            }
+            // The limit is per statement, so ranged inserts in one transaction keep the load atomic.
+            $this->loadIntoTruncatedTable(
+                $sourceTableDefinition,
+                $destinationTableDefinition,
+                $options,
+                $session,
+                $timestamp,
+                $this->sqlBuilder->getPartitionRangeSourceConditions($ranges),
+            );
+        }
     }
 
     public function importToTable(
@@ -150,7 +206,6 @@ final class FullImporter implements ToFinalTableImporterInterface
         $importFailed = false;
 
         try {
-            $transactionStarted = false;
             // 2 transfer data from source to dedup table with dedup process
             $this->bqClient->runQuery(
                 $this->bqClient->query(
@@ -169,54 +224,16 @@ final class FullImporter implements ToFinalTableImporterInterface
                 $deduplicationTableName,
             ))->getTableDefinition();
 
-            $this->bqClient->runQuery(
-                $this->bqClient->query(
-                    $this->sqlBuilder->getBeginTransaction(),
-                    $session->getAsQueryOptions(),
-                ),
-            );
-            $transactionStarted = true;
-
-            // 3 truncate destination table
-            $this->bqClient->runQuery(
-                $this->bqClient->query(
-                    $this->sqlBuilder->getTruncateTable(
-                        $destinationTableDefinition->getSchemaName(),
-                        $destinationTableDefinition->getTableName(),
-                    ),
-                    $session->getAsQueryOptions(),
-                ),
-            );
-
-            // 4 move data with INSERT INTO
-            $this->bqClient->runQuery(
-                $this->bqClient->query(
-                    $this->sqlBuilder->getInsertAllIntoTargetTableCommand(
-                        $deduplicationTableDefinition,
-                        $destinationTableDefinition,
-                        $options,
-                        DateTimeHelper::getNowFormatted(),
-                    ),
-                    $session->getAsQueryOptions(),
-                ),
+            $this->loadWithPartitionSplit(
+                $deduplicationTableDefinition,
+                $destinationTableDefinition,
+                $options,
+                $state,
+                $session,
             );
             $state->stopTimer(self::TIMER_DEDUP);
-
-            $this->bqClient->runQuery(
-                $this->bqClient->query(
-                    $this->sqlBuilder->getCommitTransaction(),
-                    $session->getAsQueryOptions(),
-                ),
-            );
         } catch (Throwable $e) {
             $importFailed = true;
-            if ($transactionStarted) {
-                RollbackTransactionHelper::rollbackTransaction(
-                    $this->bqClient,
-                    $session,
-                    $this->sqlBuilder,
-                );
-            }
             throw $e;
         } finally {
             // 5 drop dedup table by name, so a failed reflection after the CTAS does not leak it

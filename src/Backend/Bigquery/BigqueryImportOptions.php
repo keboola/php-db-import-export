@@ -11,8 +11,9 @@ use Keboola\TableBackendUtils\Connection\Bigquery\Session;
 
 class BigqueryImportOptions extends ImportOptions
 {
-    // BigQuery rejects a job that modifies more than 4,000 partitions, so a larger filter can never apply
-    public const PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT = 4000;
+    // BigQuery rejects a statement that modifies more than 4,000 partitions.
+    public const MAX_PARTITIONS_PER_STATEMENT = 4000;
+    public const PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT = self::MAX_PARTITIONS_PER_STATEMENT;
 
     private ?Session $session;
 

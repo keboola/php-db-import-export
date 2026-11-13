@@ -47,6 +47,8 @@ class SqlBuilder
     private const MAX_CLUSTER_BY_COLUMNS = 4;
 
     public const PARTITION_VALUE_ALIAS = 'partition_value';
+    public const RANGE_START_ALIAS = 'range_start';
+    public const PARTITION_COUNT_ALIAS = 'partition_count';
 
     // BigQuery format element => PHP format parsing it back; %E4Y keeps years zero-padded to 4 digits
     private const PARTITION_UNIT_FORMATS = [
@@ -201,6 +203,7 @@ SQL,
         BigqueryTableDefinition $destinationTableDefinition,
         BigqueryImportOptions $importOptions,
         string $timestamp,
+        ?string $sourceCondition = null,
     ): string {
         $destinationTable = sprintf(
             '%s.%s',
@@ -216,14 +219,84 @@ SQL,
         );
 
         return sprintf(
-            'INSERT INTO %s (%s) SELECT %s FROM %s.%s AS %s',
+            'INSERT INTO %s (%s) SELECT %s FROM %s.%s AS %s%s',
             $destinationTable,
             $this->getColumnsString($columnsToInsert),
             implode(',', $columnsSetSql),
             BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
             BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
             BigqueryQuote::quoteSingleIdentifier(self::SRC_ALIAS),
+            $sourceCondition === null ? '' : ' WHERE ' . $sourceCondition,
         );
+    }
+
+    private function getPartitionUnitExpression(PartitionRangeColumn $column): string
+    {
+        $value = sprintf('SAFE_CAST(`src`.%s AS %s)', BigqueryQuote::quoteSingleIdentifier($column->columnName), $column->type);
+
+        return match ($column->type) {
+            Bigquery::TYPE_DATE => sprintf('DATE_TRUNC(%s, %s)', $value, $column->granularity),
+            Bigquery::TYPE_DATETIME => sprintf('DATETIME_TRUNC(%s, %s)', $value, $column->granularity),
+            Bigquery::TYPE_TIMESTAMP => sprintf("TIMESTAMP_TRUNC(%s, %s, 'UTC')", $value, $column->granularity),
+            Bigquery::TYPE_INT64 => sprintf(
+                'IF(%s >= %d AND %s < %d, %d + DIV(%s - %d, %d) * %d, NULL)',
+                $value,
+                $column->rangeStart,
+                $value,
+                $column->rangeEnd,
+                $column->rangeStart,
+                $value,
+                $column->rangeStart,
+                $column->rangeInterval,
+                $column->rangeInterval,
+            ),
+        };
+    }
+
+    public function getSelectPartitionRangeStartsCommand(
+        BigqueryTableDefinition $sourceTableDefinition,
+        PartitionRangeColumn $column,
+        int $maxPartitionsPerRange,
+    ): string {
+        return sprintf(
+            'SELECT CAST(`unit` AS STRING) AS `%s`, `%s` FROM (SELECT `unit`, ROW_NUMBER() OVER (ORDER BY `unit`) AS `unit_number`, COUNT(*) OVER () AS `%s` FROM (SELECT DISTINCT %s AS `unit` FROM %s.%s AS `src`) WHERE `unit` IS NOT NULL) WHERE MOD(`unit_number` - 1, %d) = 0 ORDER BY `unit_number`',
+            self::RANGE_START_ALIAS,
+            self::PARTITION_COUNT_ALIAS,
+            self::PARTITION_COUNT_ALIAS,
+            $this->getPartitionUnitExpression($column),
+            BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
+            BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
+            $maxPartitionsPerRange,
+        );
+    }
+
+    /**
+     * @return non-empty-list<string>
+     */
+    public function getPartitionRangeSourceConditions(PartitionRanges $ranges): array
+    {
+        $unit = $this->getPartitionUnitExpression($ranges->column);
+        $literal = static fn(string $value): string => sprintf(
+            'CAST(%s AS %s)',
+            BigqueryQuote::quote($value),
+            $ranges->column->type,
+        );
+        $conditions = [];
+        foreach ($ranges->rangeStarts as $index => $start) {
+            if (isset($ranges->rangeStarts[$index + 1])) {
+                $conditions[] = sprintf(
+                    '(%s >= %s AND %s < %s)',
+                    $unit,
+                    $literal($start),
+                    $unit,
+                    $literal($ranges->rangeStarts[$index + 1]),
+                );
+            } else {
+                $conditions[] = sprintf('%s >= %s', $unit, $literal($start));
+            }
+        }
+        $conditions[] = sprintf('%s IS NULL', $unit);
+        return $conditions;
     }
 
     /**

@@ -9,6 +9,8 @@ use Keboola\Datatype\Definition\Bigquery;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryImportOptions;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportColumn;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportFilter;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionRangeColumn;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionRanges;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\SqlBuilder;
 use Keboola\Db\ImportExport\Backend\TimestampMode;
 use Keboola\TableBackendUtils\Column\Bigquery\BigqueryColumn;
@@ -296,6 +298,145 @@ class SqlBuilderTest extends TestCase
             . 'FROM `in.c-main`.`dedup_4` AS `src`',
             $sql,
         );
+    }
+
+    public function testGetInsertAllIntoTargetTableCommandWithSourceCondition(): void
+    {
+        $source = $this->table('in.c-main', 'stage', [
+            $this->col('id', Bigquery::TYPE_INT64),
+            $this->col('name', Bigquery::TYPE_STRING),
+        ]);
+        $destination = $this->table('out.c-main', 'dest', [
+            $this->col('id', Bigquery::TYPE_INT64),
+            $this->col('name', Bigquery::TYPE_STRING),
+        ]);
+        $options = new BigqueryImportOptions(
+            isIncremental: false,
+            useTimestamp: true,
+            usingTypes: BigqueryImportOptions::USING_TYPES_USER,
+        );
+        $expectedSql = 'INSERT INTO `out.c-main`.`dest` (`id`, `name`, `_timestamp`) '
+            . 'SELECT `src`.`id`,`src`.`name`,CAST(\'2024-01-01\' as TIMESTAMP) '
+            . 'FROM `in.c-main`.`stage` AS `src`';
+        self::assertSame(
+            $expectedSql,
+            $this->getInstance()->getInsertAllIntoTargetTableCommand(
+                $source,
+                $destination,
+                $options,
+                '2024-01-01',
+            ),
+        );
+        self::assertSame(
+            $expectedSql . ' WHERE `src`.`part` IS NULL',
+            $this->getInstance()->getInsertAllIntoTargetTableCommand(
+                $source,
+                $destination,
+                $options,
+                '2024-01-01',
+                '`src`.`part` IS NULL',
+            ),
+        );
+    }
+
+    /**
+     * @return Generator<string, array{PartitioningConfig, string}>
+     */
+    public static function partitionRangeExpressionProvider(): Generator
+    {
+        yield 'DATE by day' => [
+            new PartitioningConfig(new TimePartitioningConfig('DAY', null, 'day'), null, false),
+            'SELECT CAST(`unit` AS STRING) AS `range_start`, `partition_count` FROM '
+            . '(SELECT `unit`, ROW_NUMBER() OVER (ORDER BY `unit`) AS `unit_number`, '
+            . 'COUNT(*) OVER () AS `partition_count` FROM '
+            . '(SELECT DISTINCT DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) AS `unit` '
+            . 'FROM `in.c-main`.`stage` AS `src`) WHERE `unit` IS NOT NULL) '
+            . 'WHERE MOD(`unit_number` - 1, 4000) = 0 ORDER BY `unit_number`',
+        ];
+        yield 'DATE by month' => [
+            new PartitioningConfig(new TimePartitioningConfig('MONTH', null, 'day'), null, false),
+            'SELECT CAST(`unit` AS STRING) AS `range_start`, `partition_count` FROM '
+            . '(SELECT `unit`, ROW_NUMBER() OVER (ORDER BY `unit`) AS `unit_number`, '
+            . 'COUNT(*) OVER () AS `partition_count` FROM '
+            . '(SELECT DISTINCT DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), MONTH) AS `unit` '
+            . 'FROM `in.c-main`.`stage` AS `src`) WHERE `unit` IS NOT NULL) '
+            . 'WHERE MOD(`unit_number` - 1, 4000) = 0 ORDER BY `unit_number`',
+        ];
+        yield 'DATETIME by hour' => [
+            new PartitioningConfig(new TimePartitioningConfig('HOUR', null, 'dt'), null, false),
+            'SELECT CAST(`unit` AS STRING) AS `range_start`, `partition_count` FROM '
+            . '(SELECT `unit`, ROW_NUMBER() OVER (ORDER BY `unit`) AS `unit_number`, '
+            . 'COUNT(*) OVER () AS `partition_count` FROM '
+            . '(SELECT DISTINCT DATETIME_TRUNC(SAFE_CAST(`src`.`dt` AS DATETIME), HOUR) AS `unit` '
+            . 'FROM `in.c-main`.`stage` AS `src`) WHERE `unit` IS NOT NULL) '
+            . 'WHERE MOD(`unit_number` - 1, 4000) = 0 ORDER BY `unit_number`',
+        ];
+        yield 'TIMESTAMP by day' => [
+            new PartitioningConfig(new TimePartitioningConfig('DAY', null, 'ts'), null, false),
+            'SELECT CAST(`unit` AS STRING) AS `range_start`, `partition_count` FROM '
+            . '(SELECT `unit`, ROW_NUMBER() OVER (ORDER BY `unit`) AS `unit_number`, '
+            . 'COUNT(*) OVER () AS `partition_count` FROM '
+            . "(SELECT DISTINCT TIMESTAMP_TRUNC(SAFE_CAST(`src`.`ts` AS TIMESTAMP), DAY, 'UTC') AS `unit` "
+            . 'FROM `in.c-main`.`stage` AS `src`) WHERE `unit` IS NOT NULL) '
+            . 'WHERE MOD(`unit_number` - 1, 4000) = 0 ORDER BY `unit_number`',
+        ];
+        yield 'integer range' => [
+            new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '10'), false),
+            'SELECT CAST(`unit` AS STRING) AS `range_start`, `partition_count` FROM '
+            . '(SELECT `unit`, ROW_NUMBER() OVER (ORDER BY `unit`) AS `unit_number`, '
+            . 'COUNT(*) OVER () AS `partition_count` FROM '
+            . '(SELECT DISTINCT IF(SAFE_CAST(`src`.`bucket` AS INT64) >= 0 '
+            . 'AND SAFE_CAST(`src`.`bucket` AS INT64) < 100, '
+            . '0 + DIV(SAFE_CAST(`src`.`bucket` AS INT64) - 0, 10) * 10, NULL) AS `unit` '
+            . 'FROM `in.c-main`.`stage` AS `src`) WHERE `unit` IS NOT NULL) '
+            . 'WHERE MOD(`unit_number` - 1, 4000) = 0 ORDER BY `unit_number`',
+        ];
+    }
+
+    #[DataProvider('partitionRangeExpressionProvider')]
+    public function testGetSelectPartitionRangeStartsCommand(
+        PartitioningConfig $partitioning,
+        string $expectedSql,
+    ): void {
+        $column = PartitionRangeColumn::fromDestination(
+            $partitioning,
+            self::partitionedTable('out.c-main', 'dest', 'id'),
+        );
+        self::assertInstanceOf(PartitionRangeColumn::class, $column);
+
+        $sql = $this->getInstance()->getSelectPartitionRangeStartsCommand(
+            self::partitionedTable('in.c-main', 'stage', 'id'),
+            $column,
+            4000,
+        );
+
+        self::assertSame($expectedSql, $sql);
+    }
+
+    public function testGetPartitionRangeSourceConditions(): void
+    {
+        $column = PartitionRangeColumn::fromDestination(
+            new PartitioningConfig(new TimePartitioningConfig('DAY', null, 'day'), null, false),
+            self::partitionedTable('out.c-main', 'dest', 'day'),
+        );
+        self::assertInstanceOf(PartitionRangeColumn::class, $column);
+
+        self::assertSame([
+            '(DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) >= CAST(\'2000-01-01\' AS DATE) '
+            . 'AND DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) < CAST(\'2010-12-14\' AS DATE))',
+            '(DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) >= CAST(\'2010-12-14\' AS DATE) '
+            . 'AND DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) < CAST(\'2021-11-26\' AS DATE))',
+            'DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) >= CAST(\'2021-11-26\' AS DATE)',
+            'DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) IS NULL',
+        ], $this->getInstance()->getPartitionRangeSourceConditions(
+            new PartitionRanges($column, ['2000-01-01', '2010-12-14', '2021-11-26'], 3),
+        ));
+        self::assertSame([
+            'DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) >= CAST(\'2000-01-01\' AS DATE)',
+            'DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) IS NULL',
+        ], $this->getInstance()->getPartitionRangeSourceConditions(
+            new PartitionRanges($column, ['2000-01-01'], 1),
+        ));
     }
 
     /**
