@@ -8,16 +8,20 @@ use LogicException;
 
 final class PartitionRanges
 {
+    /** @var non-empty-list<string> */
+    public readonly array $rangeStarts;
+
     /**
-     * @param non-empty-list<string> $rangeStarts
+     * @param list<string> $rangeStarts
      */
     public function __construct(
         public readonly PartitionRangeColumn $column,
-        public readonly array $rangeStarts,
+        array $rangeStarts,
         public readonly int $partitionCount,
     ) {
         if ($rangeStarts === []) {
             throw new LogicException('Partition range starts cannot be empty.');
         }
+        $this->rangeStarts = $rangeStarts;
     }
 }
