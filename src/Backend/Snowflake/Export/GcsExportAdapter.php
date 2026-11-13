@@ -62,6 +62,7 @@ DETAILED_OUTPUT = TRUE%s',
 
         $this->connection->executeQuery($sql, $source->getQueryBindings());
 
+        // COPY INTO can return an incomplete file list (INC_21878); read the unloaded files via RESULT_SCAN.
         /** @var array<array{FILE_NAME: string, FILE_SIZE: string, ROW_COUNT: string}> $unloadedFiles */
         $unloadedFiles = $this->connection->fetchAllAssociative('select * from table(result_scan(last_query_id()));');
 
