@@ -122,29 +122,67 @@ final class FullImporter implements ToFinalTableImporterInterface
         Session $session,
     ): void {
         $timestamp = DateTimeHelper::getNowFormatted();
+        $retryInRanges = fn(string $message): bool => $this->retryLoadInPartitionRanges(
+            $message,
+            $sourceTableDefinition,
+            $destinationTableDefinition,
+            $options,
+            $state,
+            $session,
+            $timestamp,
+        );
         try {
-            $this->loadIntoTruncatedTable($sourceTableDefinition, $destinationTableDefinition, $options, $session, $timestamp, [null]);
-        } catch (JobException|ServiceException $e) {
-            if (!BigqueryException::isTooManyPartitionsError($e->getMessage())) {
-                throw $e;
-            }
-            $state->startTimer(self::TIMER_PARTITION_RANGES);
-            $ranges = (new PartitionRangeResolver($this->bqClient, $this->sqlBuilder))
-                ->resolve($session, $sourceTableDefinition, $destinationTableDefinition);
-            $state->stopTimer(self::TIMER_PARTITION_RANGES);
-            if ($ranges === null) {
-                throw $e;
-            }
-            // The limit is per statement, so ranged inserts in one transaction keep the load atomic.
             $this->loadIntoTruncatedTable(
                 $sourceTableDefinition,
                 $destinationTableDefinition,
                 $options,
                 $session,
                 $timestamp,
-                $this->sqlBuilder->getPartitionRangeSourceConditions($ranges),
+                [null],
             );
+        } catch (JobException $e) {
+            if (!$retryInRanges($e->getMessage())) {
+                throw $e;
+            }
+        } catch (ServiceException $e) {
+            if (!$retryInRanges($e->getMessage())) {
+                throw $e;
+            }
         }
+    }
+
+    /**
+     * @return bool false when the error is not the partition limit or the load cannot be split
+     */
+    private function retryLoadInPartitionRanges(
+        string $errorMessage,
+        BigqueryTableDefinition $sourceTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        BigqueryImportOptions $options,
+        ImportState $state,
+        Session $session,
+        string $timestamp,
+    ): bool {
+        if (!BigqueryException::isTooManyPartitionsError($errorMessage)) {
+            return false;
+        }
+        $state->startTimer(self::TIMER_PARTITION_RANGES);
+        $ranges = (new PartitionRangeResolver($this->bqClient, $this->sqlBuilder))
+            ->resolve($session, $sourceTableDefinition, $destinationTableDefinition);
+        $state->stopTimer(self::TIMER_PARTITION_RANGES);
+        if ($ranges === null) {
+            return false;
+        }
+        // The limit is per statement, so ranged inserts in one transaction keep the load atomic.
+        $this->loadIntoTruncatedTable(
+            $sourceTableDefinition,
+            $destinationTableDefinition,
+            $options,
+            $session,
+            $timestamp,
+            $this->sqlBuilder->getPartitionRangeSourceConditions($ranges),
+        );
+        return true;
     }
 
     public function importToTable(

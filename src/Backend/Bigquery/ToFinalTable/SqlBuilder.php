@@ -232,7 +232,11 @@ SQL,
 
     private function getPartitionUnitExpression(PartitionRangeColumn $column): string
     {
-        $value = sprintf('SAFE_CAST(`src`.%s AS %s)', BigqueryQuote::quoteSingleIdentifier($column->columnName), $column->type);
+        $value = sprintf(
+            'SAFE_CAST(`src`.%s AS %s)',
+            BigqueryQuote::quoteSingleIdentifier($column->columnName),
+            $column->type,
+        );
 
         return match ($column->type) {
             Bigquery::TYPE_DATE => sprintf('DATE_TRUNC(%s, %s)', $value, $column->granularity),
@@ -259,7 +263,10 @@ SQL,
         int $maxPartitionsPerRange,
     ): string {
         return sprintf(
-            'SELECT CAST(`unit` AS STRING) AS `%s`, `%s` FROM (SELECT `unit`, ROW_NUMBER() OVER (ORDER BY `unit`) AS `unit_number`, COUNT(*) OVER () AS `%s` FROM (SELECT DISTINCT %s AS `unit` FROM %s.%s AS `src`) WHERE `unit` IS NOT NULL) WHERE MOD(`unit_number` - 1, %d) = 0 ORDER BY `unit_number`',
+            'SELECT CAST(`unit` AS STRING) AS `%s`, `%s` FROM '
+            . '(SELECT `unit`, ROW_NUMBER() OVER (ORDER BY `unit`) AS `unit_number`, COUNT(*) OVER () AS `%s` FROM '
+            . '(SELECT DISTINCT %s AS `unit` FROM %s.%s AS `src`) WHERE `unit` IS NOT NULL) '
+            . 'WHERE MOD(`unit_number` - 1, %d) = 0 ORDER BY `unit_number`',
             self::RANGE_START_ALIAS,
             self::PARTITION_COUNT_ALIAS,
             self::PARTITION_COUNT_ALIAS,
