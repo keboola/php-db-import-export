@@ -40,7 +40,9 @@ final class PartitionRangeColumn
         if ($range !== null) {
             if (preg_match('/^-?\d{1,19}$/', $range->start) !== 1
                 || preg_match('/^-?\d{1,19}$/', $range->end) !== 1
-                || preg_match('/^-?\d{1,19}$/', $range->interval) !== 1) {
+                || preg_match('/^[1-9]\d{0,18}$/', $range->interval) !== 1
+                || (int) $range->start >= (int) $range->end
+                || self::findColumnType($destination, $range->column) !== Bigquery::TYPE_INT64) {
                 return null;
             }
             return new self(

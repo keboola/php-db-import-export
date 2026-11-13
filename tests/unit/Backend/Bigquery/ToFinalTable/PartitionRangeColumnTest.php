@@ -81,6 +81,22 @@ class PartitionRangeColumnTest extends TestCase
             new PartitioningConfig(null, new RangePartitioningConfig('bucket', 'oops', '100', '10'), false),
             null,
         ];
+        yield 'integer range with zero interval' => [
+            new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '0'), false),
+            null,
+        ];
+        yield 'integer range with negative interval' => [
+            new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '-10'), false),
+            null,
+        ];
+        yield 'integer range with start after end' => [
+            new PartitioningConfig(null, new RangePartitioningConfig('bucket', '100', '0', '10'), false),
+            null,
+        ];
+        yield 'integer range on non-INT64 column' => [
+            new PartitioningConfig(null, new RangePartitioningConfig('name', '0', '100', '10'), false),
+            null,
+        ];
     }
 
     /**
