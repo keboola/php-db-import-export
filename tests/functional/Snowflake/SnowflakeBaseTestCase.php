@@ -9,6 +9,8 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Logging\Middleware;
 use Exception;
 use Keboola\Datatype\Definition\Snowflake;
+use Keboola\Db\ImportExport\Backend\Snowflake\ImportMethod;
+use Keboola\Db\ImportExport\Backend\Snowflake\ImportMethodResolver;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Backend\ToStageImporterInterface;
 use Keboola\Db\ImportExport\ImportOptions;
@@ -455,13 +457,10 @@ class SnowflakeBaseTestCase extends ImportExportBaseTest
         );
     }
 
-    /**
-     * @param string[] $features
-     */
     protected static function getSnowflakeImportOptions(
         int $skipLines = 1,
         bool $useTimeStamp = true,
-        array $features = [],
+        ImportMethod $importMethod = ImportMethod::AUTO,
     ): SnowflakeImportOptions {
         return new SnowflakeImportOptions(
             convertEmptyValuesToNull: [],
@@ -469,7 +468,7 @@ class SnowflakeBaseTestCase extends ImportExportBaseTest
             useTimestamp: $useTimeStamp,
             numberOfIgnoredLines: $skipLines,
             ignoreColumns: [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
-            features: $features,
+            importMethod: ImportMethodResolver::resolve($importMethod, []),
         );
     }
 

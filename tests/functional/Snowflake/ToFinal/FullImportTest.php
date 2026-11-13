@@ -8,7 +8,10 @@ use Generator;
 use Keboola\Csv\CsvFile;
 use Keboola\CsvOptions\CsvOptions;
 use Keboola\Datatype\Definition\Snowflake;
+use Keboola\Db\Import\Exception;
 use Keboola\Db\ImportExport\Backend\ImportState;
+use Keboola\Db\ImportExport\Backend\Snowflake\ImportMethod;
+use Keboola\Db\ImportExport\Backend\Snowflake\ImportMethodResolver;
 use Keboola\Db\ImportExport\Backend\Snowflake\SnowflakeImportOptions;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToFinalTable\FullImporter;
 use Keboola\Db\ImportExport\Backend\Snowflake\ToFinalTable\SqlBuilder;
@@ -38,23 +41,21 @@ class FullImportTest extends SnowflakeBaseTestCase
     }
 
     /**
-     * @return Generator<string, array{string[]}>
+     * @return Generator<string, array{ImportMethod}>
      */
-    public static function typedTableFeatures(): Generator
+    public static function typedTableImportMethods(): Generator
     {
-        yield 'multi statement' => [[]];
-        yield 'optimized import' => [[SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT]];
+        yield 'multi statement' => [ImportMethod::MULTI_STATEMENT];
+        yield 'single statement' => [ImportMethod::SINGLE_STATEMENT];
     }
 
     /**
      * Test is testing loading of semi-structured data into typed table.
      *
      * This test is not using CSV but inserting data directly into stage table to mimic this behavior
-     *
-     * @param string[] $features
      */
-    #[DataProvider('typedTableFeatures')]
-    public function testLoadTypedTableWithCastingValues(array $features): void
+    #[DataProvider('typedTableImportMethods')]
+    public function testLoadTypedTableWithCastingValues(ImportMethod $importMethod): void
     {
         $this->connection->executeQuery(
             sprintf(
@@ -85,7 +86,7 @@ class FullImportTest extends SnowflakeBaseTestCase
             SnowflakeImportOptions::SAME_TABLES_NOT_REQUIRED,
             SnowflakeImportOptions::NULL_MANIPULATION_SKIP,
             [ToStageImporterInterface::TIMESTAMP_COLUMN_NAME],
-            features: $features,
+            importMethod: ImportMethodResolver::resolve($importMethod, []),
         );
 
         $destinationRef = new SnowflakeTableReflection(
@@ -254,8 +255,8 @@ select 1,
     }
 
     /**
-     * Same scenario as testLoadToFinalTableWithoutDedup(), but with the snowflake-optimized-import
-     * feature, which replaces TRUNCATE + INSERT inside an explicit transaction with a single
+     * Same scenario as testLoadToFinalTableWithoutDedup(), but with
+     * ImportMethod::SINGLE_STATEMENT, which replaces TRUNCATE + INSERT inside an explicit transaction with a single
      * INSERT OVERWRITE. Both must end up with the same rows.
      */
     public function testLoadToFinalTableWithoutDedupOptimizedImport(): void
@@ -266,7 +267,7 @@ select 1,
         $options = $this->getSnowflakeImportOptions(
             1,
             false,
-            [SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT],
+            ImportMethod::SINGLE_STATEMENT,
         );
         $source = $this->getSourceInstance(
             'column-name-row-number.csv',
@@ -371,9 +372,9 @@ select 1,
     }
 
     /**
-     * Same scenario as testLoadToTableWithDedupWithSinglePK(), but with the snowflake-optimized-import
-     * feature, which replaces the dedup table and TRUNCATE + INSERT in a transaction with a single
-     * INSERT OVERWRITE. Both must deduplicate to the same rows.
+     * Same scenario as testLoadToTableWithDedupWithSinglePK(), but with
+     * ImportMethod::SINGLE_STATEMENT, which replaces the dedup table and TRUNCATE + INSERT in a transaction
+     * with a single INSERT OVERWRITE. Both must deduplicate to the same rows.
      */
     public function testLoadToTableWithDedupWithSinglePKOptimizedImport(): void
     {
@@ -383,7 +384,7 @@ select 1,
         $options = $this->getSnowflakeImportOptions(
             1,
             false,
-            [SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT],
+            ImportMethod::SINGLE_STATEMENT,
         );
         $source = $this->getSourceInstance(
             'multi-pk.csv',
@@ -504,9 +505,9 @@ select 1,
     }
 
     /**
-     * Same scenario as testLoadToTableWithDedupWithMultiPK(), but with the snowflake-optimized-import
-     * feature, which collapses the duplicates inline with QUALIFY ROW_NUMBER() instead of through a
-     * dedup table. Both must deduplicate to the same rows.
+     * Same scenario as testLoadToTableWithDedupWithMultiPK(), but with
+     * ImportMethod::SINGLE_STATEMENT, which collapses the duplicates inline with QUALIFY ROW_NUMBER() instead
+     * of through a dedup table. Both must deduplicate to the same rows.
      */
     public function testLoadToTableWithDedupWithMultiPKOptimizedImport(): void
     {
@@ -516,7 +517,7 @@ select 1,
         $options = $this->getSnowflakeImportOptions(
             1,
             false,
-            [SnowflakeImportOptions::FEATURE_OPTIMIZED_IMPORT],
+            ImportMethod::SINGLE_STATEMENT,
         );
         $source = $this->getSourceInstance(
             'multi-pk.csv',
@@ -950,5 +951,89 @@ select 1,
             $expected,
             0,
         );
+    }
+
+    /**
+     * @return Generator<string, array{ImportMethod, int}>
+     */
+    public static function failedFullLoadWithPrimaryKey(): Generator
+    {
+        // the dedup table DROP in `finally` is DDL, which commits the TRUNCATE of the open transaction
+        yield 'multi statement leaves the table empty' => [ImportMethod::MULTI_STATEMENT, 0];
+        yield 'single statement leaves the table untouched' => [ImportMethod::SINGLE_STATEMENT, 1];
+    }
+
+    /**
+     * A full load into a table with a primary key whose final write fails on a cast error. Documents
+     * what each import method leaves behind in the destination table.
+     */
+    #[DataProvider('failedFullLoadWithPrimaryKey')]
+    public function testFailedFullLoadWithPrimaryKeyLeavesDestinationState(
+        ImportMethod $importMethod,
+        int $expectedRowsAfterFailure,
+    ): void {
+        $schema = SnowflakeQuote::quoteSingleIdentifier($this->getDestinationSchemaName());
+        $this->connection->executeStatement(sprintf(
+            'CREATE TABLE %s."failed_full_load" ("id" VARCHAR NOT NULL, "ts" TIMESTAMP, PRIMARY KEY ("id"))',
+            $schema,
+        ));
+        $this->connection->executeStatement(sprintf(
+            'INSERT INTO %s."failed_full_load" VALUES (\'1\', \'2020-01-01 00:00:00\')',
+            $schema,
+        ));
+
+        $destination = (new SnowflakeTableReflection(
+            $this->connection,
+            $this->getDestinationSchemaName(),
+            'failed_full_load',
+        ))->getTableDefinition();
+        assert($destination instanceof SnowflakeTableDefinition);
+        self::assertSame(['id'], $destination->getPrimaryKeysNames());
+
+        $stagingTable = StageTableDefinitionFactory::createVarcharStagingTableDefinition(
+            $destination->getSchemaName(),
+            ['id', 'ts'],
+        );
+        $this->connection->executeStatement(
+            (new SnowflakeTableQueryBuilder())->getCreateTableCommandFromDefinition($stagingTable),
+        );
+        $this->connection->executeStatement(sprintf(
+            'INSERT INTO %s.%s VALUES (\'2\', \'not a timestamp\')',
+            SnowflakeQuote::quoteSingleIdentifier($stagingTable->getSchemaName()),
+            SnowflakeQuote::quoteSingleIdentifier($stagingTable->getTableName()),
+        ));
+
+        $options = new SnowflakeImportOptions(
+            isIncremental: false,
+            useTimestamp: false,
+            requireSameTables: SnowflakeImportOptions::SAME_TABLES_NOT_REQUIRED,
+            nullManipulation: SnowflakeImportOptions::NULL_MANIPULATION_SKIP,
+            importMethod: ImportMethodResolver::resolve($importMethod, []),
+        );
+
+        try {
+            (new FullImporter($this->connection))->importToTable(
+                $stagingTable,
+                $destination,
+                $options,
+                new ImportState($stagingTable->getTableName()),
+            );
+            self::fail('The full load must fail on the cast error.');
+        } catch (Exception $e) {
+            self::assertMatchesRegularExpression('/is not recognized/', $e->getMessage());
+        } finally {
+            // what an import that failed mid-transaction leaves once its session ends
+            $this->connection->executeStatement('ROLLBACK');
+            $this->connection->executeStatement(
+                (new SqlBuilder())->getDropTableIfExistsCommand(
+                    $stagingTable->getSchemaName(),
+                    $stagingTable->getTableName(),
+                ),
+            );
+        }
+
+        $rowsAfterFailure = $this->connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s."failed_full_load"', $schema));
+        self::assertIsNumeric($rowsAfterFailure);
+        self::assertSame($expectedRowsAfterFailure, (int) $rowsAfterFailure);
     }
 }
