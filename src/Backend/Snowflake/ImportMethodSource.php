@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Keboola\Db\ImportExport\Backend\Snowflake;
 
 /**
- * Where a resolved import method came from; reported in import telemetry.
+ * Where a resolved import method came from: the request, the project feature or the platform default.
  */
 enum ImportMethodSource: string
 {
