@@ -16,12 +16,16 @@ use Keboola\Db\ImportExport\Backend\TimestampMode;
 use Keboola\Db\ImportExport\ImportOptions;
 use Keboola\Db\ImportExport\Storage\Bigquery\Table;
 use Keboola\Db\ImportExport\Storage\SourceInterface;
+use Keboola\TableBackendUtils\Connection\Bigquery\Retry;
 use Keboola\TableBackendUtils\Escaping\Bigquery\BigqueryQuote;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableDefinition;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableQueryBuilder;
 use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableReflection;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Log\NullLogger;
 use Tests\Keboola\Db\ImportExportFunctional\Bigquery\BigqueryBaseTestCase;
+use Tests\Keboola\Db\ImportExportFunctional\Bigquery\FailingRangedInsertBigQueryClient;
+use Throwable;
 
 class FullImportTest extends BigqueryBaseTestCase
 {
@@ -33,6 +37,235 @@ class FullImportTest extends BigqueryBaseTestCase
 
         $this->cleanDatabase($this->getSourceDbName());
         $this->createDatabase($this->getSourceDbName());
+    }
+
+    public static function partitionLimitSplitProvider(): Generator
+    {
+        yield 'DATE by day, typed, no primary key' => [
+            'DATE',
+            'PARTITION BY `part`',
+            "DATE_ADD(DATE '2000-01-01', INTERVAL n DAY)",
+            BigqueryImportOptions::USING_TYPES_USER,
+            [],
+            ['NULL'],
+        ];
+        yield 'DATE by day, string source, primary key' => [
+            'DATE',
+            'PARTITION BY `part`',
+            "DATE_ADD(DATE '2000-01-01', INTERVAL n DAY)",
+            BigqueryImportOptions::USING_TYPES_STRING,
+            ['id'],
+            [],
+        ];
+        yield 'TIMESTAMP by hour, typed, no primary key' => [
+            'TIMESTAMP',
+            'PARTITION BY TIMESTAMP_TRUNC(`part`, HOUR)',
+            "TIMESTAMP_ADD(TIMESTAMP '2020-01-01 00:00:00+00', INTERVAL n HOUR)",
+            BigqueryImportOptions::USING_TYPES_USER,
+            [],
+            ['NULL'],
+        ];
+        yield 'INT64 integer range, typed, no primary key' => [
+            'INT64',
+            'PARTITION BY RANGE_BUCKET(`part`, GENERATE_ARRAY(0, 50000, 10))',
+            'n * 10',
+            BigqueryImportOptions::USING_TYPES_USER,
+            [],
+            ['NULL', '-5'],
+        ];
+    }
+
+    /**
+     * @param BigqueryImportOptions::USING_TYPES_* $usingTypes
+     * @param string[] $primaryKeys
+     * @param string[] $extraSourceValues
+     */
+    #[DataProvider('partitionLimitSplitProvider')]
+    public function testFullLoadSplitsLoadOverPartitionLimit(
+        string $partitionType,
+        string $partitionBy,
+        string $valueExpression,
+        string $usingTypes,
+        array $primaryKeys,
+        array $extraSourceValues,
+    ): void {
+        [$source, $destination] = $this->createPartitionLimitTables(
+            $partitionType,
+            $partitionBy,
+            $valueExpression,
+            $usingTypes,
+            $primaryKeys,
+            $extraSourceValues,
+        );
+
+        $result = (new FullImporter($this->bqClient))->importToTable(
+            $source,
+            $destination,
+            new BigqueryImportOptions(usingTypes: $usingTypes),
+            new ImportState($source->getTableName()),
+        );
+
+        $destinationTable = sprintf(
+            '%s.`split_dest`',
+            BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+        );
+        $sourceTable = sprintf(
+            '%s.`split_source`',
+            BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName()),
+        );
+        $row = (array) $this->bqClient->runQuery($this->bqClient->query(
+            sprintf('SELECT COUNT(*) AS `count` FROM %s', $destinationTable),
+        ))->getIterator()->current();
+        assert(is_int($row['count']) || is_string($row['count']));
+        $destinationCount = (int) $row['count'];
+        $row = (array) $this->bqClient->runQuery($this->bqClient->query(
+            sprintf('SELECT COUNT(*) AS `count` FROM %s', $sourceTable),
+        ))->getIterator()->current();
+        assert(is_int($row['count']) || is_string($row['count']));
+        self::assertSame(5000 + count($extraSourceValues), (int) $row['count']);
+        self::assertSame((int) $row['count'], $destinationCount);
+
+        $row = (array) $this->bqClient->runQuery($this->bqClient->query(
+            sprintf("SELECT COUNT(*) AS `count` FROM %s WHERE `value` = 'old'", $destinationTable),
+        ))->getIterator()->current();
+        assert(is_int($row['count']) || is_string($row['count']));
+        self::assertSame(0, (int) $row['count']);
+
+        $row = (array) $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'SELECT COUNT(*) AS `count` FROM ('
+                . 'SELECT `id`, CAST(`part` AS STRING) AS `part` FROM %s '
+                . 'EXCEPT DISTINCT SELECT `id`, CAST(`part` AS STRING) FROM %s)',
+            $sourceTable,
+            $destinationTable,
+        )))->getIterator()->current();
+        assert(is_int($row['count']) || is_string($row['count']));
+        self::assertSame(0, (int) $row['count']);
+        self::assertContains('partitionRanges', array_column($result->getTimers(), 'name'));
+    }
+
+    public static function splitFailureProvider(): Generator
+    {
+        yield 'no primary key' => [[]];
+        yield 'primary key' => [['id']];
+    }
+
+    /**
+     * @param string[] $primaryKeys
+     */
+    #[DataProvider('splitFailureProvider')]
+    public function testFullLoadSplitFailureInSecondRangeKeepsDestination(array $primaryKeys): void
+    {
+        [$source, $destination] = $this->createPartitionLimitTables(
+            'DATE',
+            'PARTITION BY `part`',
+            "DATE_ADD(DATE '2000-01-01', INTERVAL n DAY)",
+            BigqueryImportOptions::USING_TYPES_USER,
+            $primaryKeys,
+            [],
+        );
+        $failingClient = new FailingRangedInsertBigQueryClient(
+            [
+                'keyFile' => self::getBqCredentials(),
+                'restRetryFunction' => Retry::getRestRetryFunction(new NullLogger(), true),
+            ],
+            2,
+        );
+
+        try {
+            (new FullImporter($failingClient))->importToTable(
+                $source,
+                $destination,
+                new BigqueryImportOptions(usingTypes: BigqueryImportOptions::USING_TYPES_USER),
+                new ImportState($source->getTableName()),
+            );
+            self::fail('The import must fail in the second range.');
+        } catch (Throwable $e) {
+            self::assertStringContainsString('Injected failure in a ranged insert.', $e->getMessage());
+        }
+
+        $rows = $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'SELECT `id`, `value` FROM %s.`split_dest` ORDER BY `id`',
+            BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+        )));
+        self::assertSame(
+            [
+                ['id' => 'old-1', 'value' => 'old'],
+                ['id' => 'old-2', 'value' => 'old'],
+            ],
+            iterator_to_array($rows->getIterator(), false),
+        );
+    }
+
+    /**
+     * @param BigqueryImportOptions::USING_TYPES_* $usingTypes
+     * @param string[] $primaryKeys
+     * @param string[] $extraSourceValues
+     * @return array{BigqueryTableDefinition, BigqueryTableDefinition}
+     */
+    private function createPartitionLimitTables(
+        string $partitionType,
+        string $partitionBy,
+        string $valueExpression,
+        string $usingTypes,
+        array $primaryKeys,
+        array $extraSourceValues,
+    ): array {
+        $destinationSchema = BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName());
+        $sourceSchema = BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName());
+        $sourceType = $usingTypes === BigqueryImportOptions::USING_TYPES_STRING ? 'STRING' : $partitionType;
+
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s.`split_dest` (`id` STRING NOT NULL, `part` %s, `value` STRING) %s',
+            $destinationSchema,
+            $partitionType,
+            $partitionBy,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'INSERT INTO %s.`split_dest` (`id`, `part`, `value`) '
+                . "SELECT `id`, %s, 'old' FROM UNNEST([0]) AS n "
+                . "CROSS JOIN UNNEST(['old-1', 'old-2']) AS `id`",
+            $destinationSchema,
+            $valueExpression,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s.`split_source` (`id` STRING, `part` %s, `value` STRING)',
+            $sourceSchema,
+            $sourceType,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'INSERT INTO %s.`split_source` (`id`, `part`, `value`) '
+                . "SELECT CONCAT('row-', CAST(n AS STRING)), CAST(%s AS %s), 'new' "
+                . 'FROM UNNEST(GENERATE_ARRAY(0, 4999)) AS n',
+            $sourceSchema,
+            $valueExpression,
+            $sourceType,
+        )));
+        foreach ($extraSourceValues as $index => $value) {
+            $this->bqClient->runQuery($this->bqClient->query(sprintf(
+                'INSERT INTO %s.`split_source` (`id`, `part`, `value`) '
+                    . "VALUES ('row-extra-%d', CAST(%s AS %s), 'new')",
+                $sourceSchema,
+                $index,
+                $value,
+                $sourceType,
+            )));
+        }
+
+        /** @var BigqueryTableDefinition $destination */
+        $destination = (new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getDestinationDbName(),
+            'split_dest',
+        ))->getTableDefinition();
+        $destination = $this->cloneDefinitionWithDedupCol($destination, $primaryKeys);
+        /** @var BigqueryTableDefinition $source */
+        $source = (new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getSourceDbName(),
+            'split_source',
+        ))->getTableDefinition();
+
+        return [$source, $destination];
     }
 
     public function testLoadToTableWithNullValuesShouldPass(): void

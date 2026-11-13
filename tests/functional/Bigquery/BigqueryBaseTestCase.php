@@ -425,7 +425,7 @@ class BigqueryBaseTestCase extends ImportExportBaseTest
      * client_x509_cert_url: string,
      * }
      */
-    private static function getBqCredentials(): array
+    protected static function getBqCredentials(): array
     {
         /**
          * @var array{

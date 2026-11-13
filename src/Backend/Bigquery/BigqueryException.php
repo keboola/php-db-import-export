@@ -150,7 +150,7 @@ class BigqueryException extends Exception
             || str_contains($message, 'maximum disk and memory limit available for shuffle operations');
     }
 
-    private static function isTooManyPartitionsError(string $message): bool
+    public static function isTooManyPartitionsError(string $message): bool
     {
         return str_contains($message, 'Too many partitions produced by query');
     }
