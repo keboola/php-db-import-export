@@ -185,6 +185,50 @@ class SqlBuilderTest extends TestCase
         );
     }
 
+    public function testGetMergeCommandWithSourceCondition(): void
+    {
+        $destination = $this->table('out.c-main', 'dest', [
+            $this->col('id', Bigquery::TYPE_INT64),
+            $this->col('name', Bigquery::TYPE_STRING),
+        ], ['id']);
+        $dedup = $this->table('in.c-main', 'dedup_4', [
+            $this->col('id', Bigquery::TYPE_INT64),
+            $this->col('name', Bigquery::TYPE_STRING),
+        ]);
+        $options = new BigqueryImportOptions(
+            isIncremental: true,
+            useTimestamp: true,
+            usingTypes: BigqueryImportOptions::USING_TYPES_USER,
+        );
+
+        self::assertSame(
+            'MERGE `out.c-main`.`dest` AS `dest` USING `in.c-main`.`dedup_4` AS `src` ON `dest`.`id` = `src`.`id`  '
+            . 'WHEN MATCHED AND (`dest`.`id` IS DISTINCT FROM `src`.`id` '
+            . 'OR `dest`.`name` IS DISTINCT FROM `src`.`name`) '
+            . 'THEN UPDATE SET `id` = `src`.`id`, `name` = `src`.`name`, `_timestamp` = \'2024-01-01 00:00:00\' '
+            . 'WHEN NOT MATCHED THEN INSERT (`id`, `name`, `_timestamp`) '
+            . 'VALUES (`src`.`id`,`src`.`name`,CAST(\'2024-01-01 00:00:00\' as TIMESTAMP))',
+            $this->getInstance()->getMergeCommand($dedup, $destination, $options, '2024-01-01 00:00:00'),
+        );
+        self::assertSame(
+            'MERGE `out.c-main`.`dest` AS `dest` USING (SELECT * FROM `in.c-main`.`dedup_4` AS `src` '
+            . 'WHERE `src`.`name` IS NULL) AS `src` ON `dest`.`id` = `src`.`id`  '
+            . 'WHEN MATCHED AND (`dest`.`id` IS DISTINCT FROM `src`.`id` '
+            . 'OR `dest`.`name` IS DISTINCT FROM `src`.`name`) '
+            . 'THEN UPDATE SET `id` = `src`.`id`, `name` = `src`.`name`, `_timestamp` = \'2024-01-01 00:00:00\' '
+            . 'WHEN NOT MATCHED THEN INSERT (`id`, `name`, `_timestamp`) '
+            . 'VALUES (`src`.`id`,`src`.`name`,CAST(\'2024-01-01 00:00:00\' as TIMESTAMP))',
+            $this->getInstance()->getMergeCommand(
+                $dedup,
+                $destination,
+                $options,
+                '2024-01-01 00:00:00',
+                null,
+                '`src`.`name` IS NULL',
+            ),
+        );
+    }
+
     public function testGetMergeCommandStringTableWithConvertEmptyValuesToNullAndCrossBackendCast(): void
     {
         $destination = $this->table('out.c-main', 'dest', [

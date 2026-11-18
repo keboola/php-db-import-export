@@ -499,6 +499,7 @@ SQL,
         BigqueryImportOptions $importOptions,
         string $timestampValue,
         ?PartitionAwareImportFilter $partitionAwareImportFilter = null,
+        ?string $sourceCondition = null,
     ): string {
         $columnsSet = $this->getColumnsSetForUpdate(
             $stagingTableDefinition,
@@ -530,6 +531,9 @@ SQL,
             BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getSchemaName()),
             BigqueryQuote::quoteSingleIdentifier($stagingTableDefinition->getTableName()),
         );
+        if ($sourceCondition !== null) {
+            $src = sprintf('(SELECT * FROM %s AS `src` WHERE %s)', $src, $sourceCondition);
+        }
 
         return sprintf(
             'MERGE %s AS `dest` USING %s AS `src` ON %s%s'

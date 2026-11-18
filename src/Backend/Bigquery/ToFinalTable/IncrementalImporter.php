@@ -30,6 +30,7 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
     private const TIMER_UPDATE_TARGET_TABLE = 'updateTargetTable';
     private const TIMER_DEDUP_STAGING = 'dedupStaging';
     private const TIMER_PARTITION_AWARE_IMPORT_DISTINCT_VALUES = 'partitionAwareImportDistinctValues';
+    private const TIMER_PARTITION_RANGES = 'partitionRanges';
 
     private BigQueryClient $bqClient;
 
@@ -65,7 +66,6 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         }
         $importFailed = false;
         try {
-            $transactionStarted = false;
             if (!empty($destinationTableDefinition->getPrimaryKeysNames())) {
                 // has PKs for dedup
                 $deduplicationTableName = BackendHelper::generateTempDedupTableName();
@@ -103,73 +103,24 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                     $state,
                 );
 
-                // MERGE is a single atomic statement, so the PK branch needs no explicit transaction
-                $state->startTimer(self::TIMER_UPDATE_TARGET_TABLE);
-                $this->bqClient->runQuery(
-                    $this->bqClient->query(
-                        $this->sqlBuilder->getMergeCommand(
-                            $deduplicationTableDefinition,
-                            $destinationTableDefinition,
-                            $options,
-                            $this->timestamp,
-                            $partitionAwareImportFilter,
-                        ),
-                        $session->getAsQueryOptions(),
-                    ),
+                $this->mergeWithPartitionSplit(
+                    $deduplicationTableDefinition,
+                    $destinationTableDefinition,
+                    $options,
+                    $state,
+                    $session,
+                    $partitionAwareImportFilter,
                 );
-                $state->stopTimer(self::TIMER_UPDATE_TARGET_TABLE);
             } else {
-                $this->bqClient->runQuery(
-                    $this->bqClient->query(
-                        $this->sqlBuilder->getBeginTransaction(),
-                        $session->getAsQueryOptions(),
-                    ),
-                );
-                $transactionStarted = true;
-
-                // insert into destination table
-                $state->startTimer(self::TIMER_INSERT_INTO_TARGET);
-                $this->bqClient->runQuery(
-                    $this->bqClient->query(
-                        $this->sqlBuilder->getInsertAllIntoTargetTableCommand(
-                            $stagingTableDefinition,
-                            $destinationTableDefinition,
-                            $options,
-                            $this->timestamp,
-                        ),
-                        $session->getAsQueryOptions(),
-                    ),
-                );
-                $state->stopTimer(self::TIMER_INSERT_INTO_TARGET);
-
-                $this->bqClient->runQuery(
-                    $this->bqClient->query(
-                        $this->sqlBuilder->getCommitTransaction(),
-                        $session->getAsQueryOptions(),
-                    ),
-                );
+                $this->insertWithPartitionSplit($stagingTableDefinition, $destinationTableDefinition, $options, $state, $session);
             }
 
             $state->setImportedColumns($stagingTableDefinition->getColumnsNames());
         } catch (JobException|ServiceException $e) {
             $importFailed = true;
-            if ($transactionStarted) {
-                RollbackTransactionHelper::rollbackTransaction(
-                    $this->bqClient,
-                    $session,
-                    $this->sqlBuilder,
-                );
-            }
             throw BigqueryException::covertException($e);
         } catch (Throwable $e) {
             $importFailed = true;
-            if ($transactionStarted) {
-                RollbackTransactionHelper::rollbackTransaction(
-                    $this->bqClient,
-                    $session,
-                    $this->sqlBuilder,
-                );
-            }
             throw $e;
         } finally {
             if (isset($deduplicationTableName)) {
@@ -194,6 +145,151 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         }
 
         return $state->getResult();
+    }
+
+    private function runStatement(string $sql, Session $session): void
+    {
+        $this->bqClient->runQuery($this->bqClient->query($sql, $session->getAsQueryOptions()));
+    }
+
+    /**
+     * @param non-empty-list<string|null> $sourceConditions
+     * @param callable(string|null): string $getSql
+     */
+    private function writeInTransaction(
+        Session $session,
+        ImportState $state,
+        string $timerName,
+        array $sourceConditions,
+        callable $getSql,
+    ): void {
+        $transactionStarted = false;
+        try {
+            $this->runStatement($this->sqlBuilder->getBeginTransaction(), $session);
+            $transactionStarted = true;
+            $state->startTimer($timerName);
+            foreach ($sourceConditions as $sourceCondition) {
+                $this->runStatement($getSql($sourceCondition), $session);
+            }
+            $state->stopTimer($timerName);
+            $this->runStatement($this->sqlBuilder->getCommitTransaction(), $session);
+        } catch (Throwable $e) {
+            if ($transactionStarted) {
+                RollbackTransactionHelper::rollbackTransaction($this->bqClient, $session, $this->sqlBuilder);
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * @param callable(string|null): string $getSql
+     * @return bool false when the error is not the partition limit or the load cannot be split
+     */
+    private function retryInPartitionRanges(
+        string $errorMessage,
+        BigqueryTableDefinition $sourceTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        ImportState $state,
+        Session $session,
+        string $timerName,
+        callable $getSql,
+    ): bool {
+        if (!BigqueryException::isTooManyPartitionsError($errorMessage)) {
+            return false;
+        }
+        $state->startTimer(self::TIMER_PARTITION_RANGES);
+        $ranges = (new PartitionRangeResolver($this->bqClient, $this->sqlBuilder))
+            ->resolve($session, $sourceTableDefinition, $destinationTableDefinition);
+        $state->stopTimer(self::TIMER_PARTITION_RANGES);
+        if ($ranges === null) {
+            return false;
+        }
+        // The limit is per statement, so ranged statements in one transaction keep the load atomic.
+        $this->writeInTransaction(
+            $session,
+            $state,
+            $timerName,
+            $this->sqlBuilder->getPartitionRangeSourceConditions($ranges),
+            $getSql,
+        );
+        return true;
+    }
+
+    private function insertWithPartitionSplit(
+        BigqueryTableDefinition $stagingTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        BigqueryImportOptions $options,
+        ImportState $state,
+        Session $session,
+    ): void {
+        $getSql = fn(?string $sourceCondition): string => $this->sqlBuilder->getInsertAllIntoTargetTableCommand(
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $options,
+            $this->timestamp,
+            $sourceCondition,
+        );
+        $retryInRanges = fn(string $message): bool => $this->retryInPartitionRanges(
+            $message,
+            $stagingTableDefinition,
+            $destinationTableDefinition,
+            $state,
+            $session,
+            self::TIMER_INSERT_INTO_TARGET,
+            $getSql,
+        );
+        try {
+            $this->writeInTransaction($session, $state, self::TIMER_INSERT_INTO_TARGET, [null], $getSql);
+        } catch (JobException $e) {
+            if (!$retryInRanges($e->getMessage())) {
+                throw $e;
+            }
+        } catch (ServiceException $e) {
+            if (!$retryInRanges($e->getMessage())) {
+                throw $e;
+            }
+        }
+    }
+
+    private function mergeWithPartitionSplit(
+        BigqueryTableDefinition $deduplicationTableDefinition,
+        BigqueryTableDefinition $destinationTableDefinition,
+        BigqueryImportOptions $options,
+        ImportState $state,
+        Session $session,
+        ?PartitionAwareImportFilter $partitionAwareImportFilter,
+    ): void {
+        $getSql = fn(?string $sourceCondition): string => $this->sqlBuilder->getMergeCommand(
+            $deduplicationTableDefinition,
+            $destinationTableDefinition,
+            $options,
+            $this->timestamp,
+            $partitionAwareImportFilter,
+            $sourceCondition,
+        );
+        $retryInRanges = fn(string $message): bool => $this->retryInPartitionRanges(
+            $message,
+            $deduplicationTableDefinition,
+            $destinationTableDefinition,
+            $state,
+            $session,
+            self::TIMER_UPDATE_TARGET_TABLE,
+            $getSql,
+        );
+        try {
+            // MERGE is a single atomic statement, so the unsplit attempt needs no explicit transaction
+            $state->startTimer(self::TIMER_UPDATE_TARGET_TABLE);
+            $this->runStatement($getSql(null), $session);
+            $state->stopTimer(self::TIMER_UPDATE_TARGET_TABLE);
+        } catch (JobException $e) {
+            if (!$retryInRanges($e->getMessage())) {
+                throw $e;
+            }
+        } catch (ServiceException $e) {
+            if (!$retryInRanges($e->getMessage())) {
+                throw $e;
+            }
+        }
     }
 
     private function resolvePartitionAwareImportFilter(
