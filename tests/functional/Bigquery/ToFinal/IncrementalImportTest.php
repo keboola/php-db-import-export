@@ -169,7 +169,11 @@ class IncrementalImportTest extends BigqueryBaseTestCase
 
     public static function incrementalSplitFailureProvider(): Generator
     {
-        yield 'no primary key' => [[], FailingRangedInsertBigQueryClient::class, 'Injected failure in a ranged insert.'];
+        yield 'no primary key' => [
+            [],
+            FailingRangedInsertBigQueryClient::class,
+            'Injected failure in a ranged insert.',
+        ];
         yield 'primary key' => [['id'], FailingRangedMergeBigQueryClient::class, 'Injected failure in a ranged merge.'];
     }
 

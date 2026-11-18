@@ -112,7 +112,13 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
                     $partitionAwareImportFilter,
                 );
             } else {
-                $this->insertWithPartitionSplit($stagingTableDefinition, $destinationTableDefinition, $options, $state, $session);
+                $this->insertWithPartitionSplit(
+                    $stagingTableDefinition,
+                    $destinationTableDefinition,
+                    $options,
+                    $state,
+                    $session,
+                );
             }
 
             $state->setImportedColumns($stagingTableDefinition->getColumnsNames());
