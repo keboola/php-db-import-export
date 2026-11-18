@@ -42,7 +42,12 @@ final class PartitionRangeColumn
                 || preg_match('/^-?\d{1,19}$/', $range->end) !== 1
                 || preg_match('/^[1-9]\d{0,18}$/', $range->interval) !== 1
                 || (int) $range->start >= (int) $range->end
-                || self::findColumnType($destination, $range->column) !== Bigquery::TYPE_INT64) {
+            ) {
+                return null;
+            }
+            // the REST API reports an INT64 column as INTEGER
+            $type = self::findColumnType($destination, $range->column);
+            if ($type !== Bigquery::TYPE_INT64 && $type !== Bigquery::TYPE_INTEGER) {
                 return null;
             }
             return new self(

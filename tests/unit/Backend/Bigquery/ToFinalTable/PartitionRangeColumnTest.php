@@ -27,6 +27,7 @@ class PartitionRangeColumnTest extends TestCase
             new BigqueryColumn('dt', new Bigquery(Bigquery::TYPE_DATETIME)),
             new BigqueryColumn('ts', new Bigquery(Bigquery::TYPE_TIMESTAMP)),
             new BigqueryColumn('bucket', new Bigquery(Bigquery::TYPE_INT64)),
+            new BigqueryColumn('rest_bucket', new Bigquery(Bigquery::TYPE_INTEGER)),
         ]), ['id']);
     }
 
@@ -54,6 +55,10 @@ class PartitionRangeColumnTest extends TestCase
         yield 'integer range' => [
             new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '10'), false),
             ['bucket', Bigquery::TYPE_INT64, null, 0, 100, 10],
+        ];
+        yield 'integer range on a column reported as INTEGER' => [
+            new PartitioningConfig(null, new RangePartitioningConfig('rest_bucket', '0', '100', '10'), false),
+            ['rest_bucket', Bigquery::TYPE_INT64, null, 0, 100, 10],
         ];
         yield 'STRING column' => [
             new PartitioningConfig(new TimePartitioningConfig('DAY', null, 'name'), null, false),
