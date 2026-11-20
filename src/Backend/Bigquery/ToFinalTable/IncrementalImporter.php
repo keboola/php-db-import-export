@@ -210,7 +210,10 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
         if ($ranges === null) {
             return false;
         }
-        if ($ranges->partitionCount > BigqueryImportOptions::MAX_PARTITIONS_PER_TABLE) {
+        // Expired partitions may not count toward the table limit, so BigQuery decides for such a table.
+        if (!$ranges->destinationPartitionsExpire
+            && $ranges->partitionCount > BigqueryImportOptions::MAX_PARTITIONS_PER_TABLE
+        ) {
             throw BigqueryException::createTablePartitionLimitException($ranges->partitionCount, $ranges->column);
         }
         // The limit is per statement, so ranged statements in one transaction keep the load atomic.

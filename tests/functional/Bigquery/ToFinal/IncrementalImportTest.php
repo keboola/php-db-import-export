@@ -267,6 +267,32 @@ class IncrementalImportTest extends BigqueryBaseTestCase
         );
     }
 
+    public function testIncrementalLoadOverTablePartitionLimitSkipsCheckWhenPartitionsExpire(): void
+    {
+        [$source, $destination] = $this->createIncrementalPartitionLimitTables(
+            'DATE',
+            'PARTITION BY `part` OPTIONS (partition_expiration_days = 30)',
+            "DATE_ADD(DATE '2000-01-01', INTERVAL n DAY)",
+            BigqueryImportOptions::USING_TYPES_USER,
+            [],
+            [],
+            10001,
+        );
+
+        try {
+            (new IncrementalImporter($this->bqClient))->importToTable(
+                $source,
+                $destination,
+                new BigqueryImportOptions(isIncremental: true, usingTypes: BigqueryImportOptions::USING_TYPES_USER),
+                new ImportState($source->getTableName()),
+            );
+        } catch (Throwable $e) {
+            // BigQuery may still refuse the load; only the source check must not fire
+            self::assertStringNotContainsString('The load holds', $e->getMessage());
+        }
+        $this->addToAssertionCount(1);
+    }
+
     public function testIncrementalLoadTakingTableOverPartitionLimitFails(): void
     {
         $destinationSchema = BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName());

@@ -18,6 +18,7 @@ final class PartitionRanges
         public readonly PartitionRangeColumn $column,
         array $rangeStarts,
         public readonly int $partitionCount,
+        public readonly bool $destinationPartitionsExpire = false,
     ) {
         if ($rangeStarts === []) {
             throw new LogicException('Partition range starts cannot be empty.');

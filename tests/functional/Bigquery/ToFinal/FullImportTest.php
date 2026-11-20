@@ -235,6 +235,32 @@ class FullImportTest extends BigqueryBaseTestCase
         );
     }
 
+    public function testFullLoadOverTablePartitionLimitSkipsCheckWhenPartitionsExpire(): void
+    {
+        [$source, $destination] = $this->createPartitionLimitTables(
+            'DATE',
+            'PARTITION BY `part` OPTIONS (partition_expiration_days = 30)',
+            "DATE_ADD(DATE '2000-01-01', INTERVAL n DAY)",
+            BigqueryImportOptions::USING_TYPES_USER,
+            [],
+            [],
+            10001,
+        );
+
+        try {
+            (new FullImporter($this->bqClient))->importToTable(
+                $source,
+                $destination,
+                new BigqueryImportOptions(usingTypes: BigqueryImportOptions::USING_TYPES_USER),
+                new ImportState($source->getTableName()),
+            );
+        } catch (Throwable $e) {
+            // BigQuery may still refuse the load; only the source check must not fire
+            self::assertStringNotContainsString('The load holds', $e->getMessage());
+        }
+        $this->addToAssertionCount(1);
+    }
+
     /**
      * @param BigqueryImportOptions::USING_TYPES_* $usingTypes
      * @param string[] $primaryKeys

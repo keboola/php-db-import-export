@@ -62,6 +62,11 @@ final class PartitionRangeResolver
         if ($starts === []) {
             return null;
         }
-        return new PartitionRanges($column, $starts, $partitionCount);
+        return new PartitionRanges(
+            $column,
+            $starts,
+            $partitionCount,
+            $partitioning?->timePartitioningConfig?->expirationMs !== null,
+        );
     }
 }
