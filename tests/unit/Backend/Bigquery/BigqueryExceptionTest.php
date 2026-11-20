@@ -28,6 +28,15 @@ class BigqueryExceptionTest extends TestCase
     private const TOO_MANY_PARTITIONS_ADVICE = 'A single load touches too many partitions of the destination '
         . 'table. Use coarser partitioning (e.g. by month), a different partition column, or split the load.';
 
+    private const CSV_GIVING_UP_MESSAGE = 'Error while reading data, error message: CSV processing encountered '
+        . 'too many errors, giving up. Rows: 3184725; errors: 105; max bad: 0; error percent: 0';
+
+    // the per-row error from DMD-1219
+    private const INVALID_NUMERIC_MESSAGE = 'Error while reading data, error message: Invalid NUMERIC value: '
+        . '2.9999999999999996; line_number: 266102 byte_offset_to_start_of_line: 36677456 column_index: 4 '
+        . 'column_name: "quantity" column_type: NUMERIC value: "2.9999999999999996" '
+        . 'File: gs://some-bucket/exp-15/files/data.csv.gz';
+
     /**
      * @param mixed[]            $job
      * @param callable(Throwable $throwable): void $expectedThrowableAssertion
@@ -395,13 +404,86 @@ class BigqueryExceptionTest extends TestCase
                 ],
             ],
             static function (Throwable $e) {
+                $lines = explode(PHP_EOL, $e->getMessage());
+                self::assertCount(2, $lines);
                 self::assertStringStartsWith(
-                    'There were too many errors during the import. For more information check job',
-                    $e->getMessage(),
+                    'Error while reading data, error message: Could not parse \'00:00:00\' as a timestamp.',
+                    $lines[0],
                 );
-
-                self::assertCount(1, explode(PHP_EOL, $e->getMessage()));
+                self::assertStringContainsString(
+                    'line_number: 2 byte_offset_to_start_of_line: 17 column_index: 1 '
+                    . 'column_name: "timestamp" column_type: TIMESTAMP value: "00:00:00"',
+                    $lines[0],
+                );
+                self::assertSame(
+                    'There were 12 errors during the import, only the first one is shown. For more information '
+                    . 'check job "eb64d133-213d-4e99-9cc0-4e37d0c18de9" in Google Cloud Console.',
+                    $lines[1],
+                );
                 self::assertInstanceOf(BigqueryInputDataException::class, $e);
+            },
+        ];
+        yield 'value does not fit the column type' => [
+            [
+                'jobReference' => [
+                    'projectId' => 'tf2-56',
+                    'jobId' => 'eb64d133-213d-4e99-9cc0-4e37d0c18de9',
+                    'location' => 'US',
+                ],
+                'status' => [
+                    'errorResult' => [
+                        'reason' => 'invalid',
+                        'message' => self::CSV_GIVING_UP_MESSAGE,
+                    ],
+                    'errors' => [
+                        [
+                            'reason' => 'invalid',
+                            'message' => self::CSV_GIVING_UP_MESSAGE,
+                        ],
+                        [
+                            'reason' => 'invalid',
+                            'message' => self::INVALID_NUMERIC_MESSAGE,
+                        ],
+                    ],
+                    'state' => 'DONE',
+                ],
+            ],
+            static function (Throwable $e) {
+                self::assertInstanceOf(BigqueryInputDataException::class, $e);
+                self::assertSame(self::INVALID_NUMERIC_MESSAGE, $e->getMessage());
+            },
+        ];
+        yield 'read error without a column is not a user error' => [
+            [
+                'jobReference' => [
+                    'projectId' => 'tf2-56',
+                    'jobId' => 'eb64d133-213d-4e99-9cc0-4e37d0c18de9',
+                    'location' => 'US',
+                ],
+                'status' => [
+                    'errorResult' => [
+                        'reason' => 'invalid',
+                        'message' => self::CSV_GIVING_UP_MESSAGE,
+                    ],
+                    'errors' => [
+                        [
+                            'reason' => 'invalid',
+                            'message' => self::CSV_GIVING_UP_MESSAGE,
+                        ],
+                        [
+                            'reason' => 'invalid',
+                            'message' => 'Error while reading data, error message: Failed to expand table with file '
+                                . 'pattern gs://some-bucket/exp-15/files/data.csv.gz: matched no files. '
+                                . 'File: gs://some-bucket/exp-15/files/data.csv.gz',
+                        ],
+                    ],
+                    'state' => 'DONE',
+                ],
+            ],
+            static function (Throwable $e) {
+                self::assertNotInstanceOf(BigqueryInputDataException::class, $e);
+                self::assertInstanceOf(BigqueryException::class, $e);
+                self::assertSame(self::CSV_GIVING_UP_MESSAGE, $e->getMessage());
             },
         ];
         yield 'Required column value is missing' => [

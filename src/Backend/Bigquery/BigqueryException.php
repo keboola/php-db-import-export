@@ -163,6 +163,10 @@ class BigqueryException extends Exception
         if (str_contains($message, 'Could not parse')) {
             return true;
         }
+        // per-row read error naming the column and the value; file-access failures carry neither
+        if (preg_match('/column_name: .+ value: /', $message) === 1) {
+            return true;
+        }
         return false;
     }
 
@@ -177,8 +181,10 @@ class BigqueryException extends Exception
         $count = count($parsingErrors);
         if ($count > self::MAX_MESSAGES_IN_ERROR_MESSAGE) {
             return sprintf(
-                'There were too many errors during the import. For more information check job "%s"'
-                . 'in Google Cloud Console.',
+                '%s' . PHP_EOL . 'There were %d errors during the import, only the first one is shown. '
+                . 'For more information check job "%s" in Google Cloud Console.',
+                array_values($parsingErrors)[0]['message'],
+                $count,
                 $jobId,
             );
         }
