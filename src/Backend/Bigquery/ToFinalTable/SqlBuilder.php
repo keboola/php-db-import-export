@@ -49,6 +49,7 @@ class SqlBuilder
     public const PARTITION_VALUE_ALIAS = 'partition_value';
     public const RANGE_START_ALIAS = 'range_start';
     public const PARTITION_COUNT_ALIAS = 'partition_count';
+    public const HAS_NULL_UNIT_ALIAS = 'has_null_unit';
 
     // BigQuery format element => PHP format parsing it back; %E4Y keeps years zero-padded to 4 digits
     private const PARTITION_UNIT_FORMATS = [
@@ -277,6 +278,19 @@ SQL,
         );
     }
 
+    public function getSelectHasNullPartitionUnitCommand(
+        BigqueryTableDefinition $sourceTableDefinition,
+        PartitionRangeColumn $column,
+    ): string {
+        return sprintf(
+            'SELECT EXISTS(SELECT 1 FROM %s.%s AS `src` WHERE %s IS NULL) AS `%s`',
+            BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getSchemaName()),
+            BigqueryQuote::quoteSingleIdentifier($sourceTableDefinition->getTableName()),
+            $this->getPartitionUnitExpression($column),
+            self::HAS_NULL_UNIT_ALIAS,
+        );
+    }
+
     /**
      * @return non-empty-list<string>
      */
@@ -302,7 +316,9 @@ SQL,
                 $conditions[] = sprintf('%s >= %s', $unit, $literal($start));
             }
         }
-        $conditions[] = sprintf('%s IS NULL', $unit);
+        if ($ranges->hasNullUnit) {
+            $conditions[] = sprintf('%s IS NULL', $unit);
+        }
         return $conditions;
     }
 

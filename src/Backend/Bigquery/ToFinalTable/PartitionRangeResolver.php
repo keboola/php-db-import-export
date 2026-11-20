@@ -62,6 +62,20 @@ final class PartitionRangeResolver
         if ($starts === []) {
             return null;
         }
-        return new PartitionRanges($column, $starts, $partitionCount);
+
+        $hasNullUnit = null;
+        $nullResult = $this->bqClient->runQuery($this->bqClient->query(
+            $this->sqlBuilder->getSelectHasNullPartitionUnitCommand($sourceTableDefinition, $column),
+            $session->getAsQueryOptions(),
+        ));
+        foreach ($nullResult as $row) {
+            assert(is_array($row));
+            $hasNullUnit = $row[SqlBuilder::HAS_NULL_UNIT_ALIAS] ?? null;
+        }
+        if (!is_bool($hasNullUnit)) {
+            throw new LogicException('Partition NULL unit query returned an unexpected row.');
+        }
+
+        return new PartitionRanges($column, $starts, $partitionCount, $hasNullUnit);
     }
 }
