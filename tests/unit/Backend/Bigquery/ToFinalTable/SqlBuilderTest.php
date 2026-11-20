@@ -481,6 +481,49 @@ class SqlBuilderTest extends TestCase
         ], $this->getInstance()->getPartitionRangeSourceConditions(
             new PartitionRanges($column, ['2000-01-01'], 1),
         ));
+        self::assertSame([
+            '(DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) >= CAST(\'2000-01-01\' AS DATE) '
+            . 'AND DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) < CAST(\'2010-12-14\' AS DATE))',
+            'DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) >= CAST(\'2010-12-14\' AS DATE)',
+        ], $this->getInstance()->getPartitionRangeSourceConditions(
+            new PartitionRanges($column, ['2000-01-01', '2010-12-14'], 2, hasNullUnit: false),
+        ));
+    }
+
+    /**
+     * @return Generator<string, array{PartitioningConfig, string}>
+     */
+    public static function hasNullPartitionUnitProvider(): Generator
+    {
+        yield 'DATE by day' => [
+            new PartitioningConfig(new TimePartitioningConfig('DAY', null, 'day'), null, false),
+            'SELECT EXISTS(SELECT 1 FROM `in.c-main`.`stage` AS `src` '
+            . 'WHERE DATE_TRUNC(SAFE_CAST(`src`.`day` AS DATE), DAY) IS NULL) AS `has_null_unit`',
+        ];
+        yield 'integer range' => [
+            new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '100', '10'), false),
+            'SELECT EXISTS(SELECT 1 FROM `in.c-main`.`stage` AS `src` '
+            . 'WHERE IF(SAFE_CAST(`src`.`bucket` AS INT64) >= 0 '
+            . 'AND SAFE_CAST(`src`.`bucket` AS INT64) < 100, '
+            . '0 + DIV(SAFE_CAST(`src`.`bucket` AS INT64) - 0, 10) * 10, NULL) IS NULL) AS `has_null_unit`',
+        ];
+    }
+
+    #[DataProvider('hasNullPartitionUnitProvider')]
+    public function testGetSelectHasNullPartitionUnitCommand(
+        PartitioningConfig $partitioning,
+        string $expectedSql,
+    ): void {
+        $column = PartitionRangeColumn::fromDestination(
+            $partitioning,
+            self::partitionedTable('out.c-main', 'dest', 'id'),
+        );
+        self::assertInstanceOf(PartitionRangeColumn::class, $column);
+
+        self::assertSame($expectedSql, $this->getInstance()->getSelectHasNullPartitionUnitCommand(
+            self::partitionedTable('in.c-main', 'stage', 'id'),
+            $column,
+        ));
     }
 
     /**
