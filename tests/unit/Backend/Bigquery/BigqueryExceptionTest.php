@@ -6,9 +6,17 @@ namespace Tests\Keboola\Db\ImportExportUnit\Backend\Bigquery;
 
 use Generator;
 use Google\Cloud\Core\Exception\BadRequestException;
+use Keboola\Datatype\Definition\Bigquery;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryException;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryInputDataException;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryResourcesExceededException;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionRangeColumn;
+use Keboola\TableBackendUtils\Column\Bigquery\BigqueryColumn;
+use Keboola\TableBackendUtils\Column\ColumnCollection;
+use Keboola\TableBackendUtils\Table\Bigquery\BigqueryTableDefinition;
+use Keboola\TableBackendUtils\Table\Bigquery\PartitioningConfig;
+use Keboola\TableBackendUtils\Table\Bigquery\RangePartitioningConfig;
+use Keboola\TableBackendUtils\Table\Bigquery\TimePartitioningConfig;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Throwable;
@@ -27,6 +35,9 @@ class BigqueryExceptionTest extends TestCase
 
     private const TOO_MANY_PARTITIONS_ADVICE = 'A single load touches too many partitions of the destination '
         . 'table. Use coarser partitioning (e.g. by month), a different partition column, or split the load.';
+
+    // phpcs:ignore Generic.Files.LineLength
+    private const TABLE_PARTITION_LIMIT_BIGQUERY_MESSAGE = 'Resources exceeded during query execution: Table my-project:out_c_main.dest will have 10500 partitions when the job finishes, exceeding limit 10000. If partitions were recently expired, it may take some time to be reflected unless explicitly deleted.';
 
     /**
      * @param mixed[]            $job
@@ -937,6 +948,114 @@ class BigqueryExceptionTest extends TestCase
                 );
             },
         ];
+
+        yield 'table partition limit' => [
+            [
+                'jobReference' => [
+                    'projectId' => 'tf2-56',
+                    'jobId' => 'eb64d133-213d-4e99-9cc0-4e37d0c18de9',
+                    'location' => 'US',
+                ],
+                'status' => [
+                    'errorResult' => [
+                        'reason' => 'resourcesExceeded',
+                        'message' => self::TABLE_PARTITION_LIMIT_BIGQUERY_MESSAGE,
+                    ],
+                    'errors' => [
+                        [
+                            'reason' => 'resourcesExceeded',
+                            'message' => self::TABLE_PARTITION_LIMIT_BIGQUERY_MESSAGE,
+                        ],
+                    ],
+                    'state' => 'DONE',
+                ],
+            ],
+            static function (Throwable $e) {
+                self::assertInstanceOf(BigqueryInputDataException::class, $e);
+                self::assertNotInstanceOf(BigqueryResourcesExceededException::class, $e);
+                self::assertStringContainsString('will have 10500 partitions', $e->getMessage());
+                self::assertStringContainsString('Use coarser partitioning', $e->getMessage());
+                self::assertStringContainsString(
+                    'check job "eb64d133-213d-4e99-9cc0-4e37d0c18de9"',
+                    $e->getMessage(),
+                );
+            },
+        ];
+    }
+
+    public function testCovertExceptionTablePartitionLimitIsUserError(): void
+    {
+        $e = BigqueryException::covertException(new BadRequestException(
+            (string) json_encode([
+                'error' => [
+                    'code' => 400,
+                    'message' => self::TABLE_PARTITION_LIMIT_BIGQUERY_MESSAGE,
+                    'errors' => [
+                        [
+                            'message' => self::TABLE_PARTITION_LIMIT_BIGQUERY_MESSAGE,
+                            'domain' => 'global',
+                            'reason' => 'resourcesExceeded',
+                        ],
+                    ],
+                    'status' => 'INVALID_ARGUMENT',
+                ],
+            ]),
+            400,
+        ));
+
+        self::assertInstanceOf(BigqueryInputDataException::class, $e);
+        self::assertNotInstanceOf(BigqueryResourcesExceededException::class, $e);
+        self::assertStringContainsString('will have 10500 partitions', $e->getMessage());
+        self::assertStringContainsString('Use coarser partitioning', $e->getMessage());
+    }
+
+    /**
+     * @return Generator<string, array{PartitioningConfig, string}>
+     */
+    public static function provideTablePartitionLimitAdvice(): Generator
+    {
+        yield 'HOUR' => [
+            new PartitioningConfig(new TimePartitioningConfig('HOUR', null, 'ts'), null, false),
+            'Partition the table by DAY instead of HOUR.',
+        ];
+        yield 'DAY' => [
+            new PartitioningConfig(new TimePartitioningConfig('DAY', null, 'ts'), null, false),
+            'Partition the table by MONTH instead of DAY.',
+        ];
+        yield 'MONTH' => [
+            new PartitioningConfig(new TimePartitioningConfig('MONTH', null, 'ts'), null, false),
+            'Partition the table by YEAR instead of MONTH.',
+        ];
+        yield 'YEAR' => [
+            new PartitioningConfig(new TimePartitioningConfig('YEAR', null, 'ts'), null, false),
+            'Use a different partition column.',
+        ];
+        yield 'integer range' => [
+            new PartitioningConfig(null, new RangePartitioningConfig('bucket', '0', '1000000', '10'), false),
+            'Use a range interval larger than 10.',
+        ];
+    }
+
+    #[DataProvider('provideTablePartitionLimitAdvice')]
+    public function testCreateTablePartitionLimitExceptionNamesNextGranularity(
+        PartitioningConfig $partitioning,
+        string $expectedAdvice,
+    ): void {
+        $column = PartitionRangeColumn::fromDestination(
+            $partitioning,
+            new BigqueryTableDefinition('out.c-main', 'dest', false, new ColumnCollection([
+                new BigqueryColumn('ts', new Bigquery(Bigquery::TYPE_TIMESTAMP)),
+                new BigqueryColumn('bucket', new Bigquery(Bigquery::TYPE_INT64)),
+            ]), []),
+        );
+        self::assertInstanceOf(PartitionRangeColumn::class, $column);
+
+        $e = BigqueryException::createTablePartitionLimitException(10001, $column);
+
+        self::assertSame(
+            'The load holds 10001 partitions, BigQuery allows 10000 partitions in one table. ' . $expectedAdvice,
+            $e->getMessage(),
+        );
     }
 
     public function testCovertExceptionResourcesExceeded(): void

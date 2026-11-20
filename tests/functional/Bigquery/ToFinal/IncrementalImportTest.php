@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Generator;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryImportOptions;
+use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryInputDataException;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\FullImporter;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\IncrementalImporter;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportColumn;
@@ -228,6 +229,112 @@ class IncrementalImportTest extends BigqueryBaseTestCase
         );
     }
 
+    public function testIncrementalLoadOverTablePartitionLimitFails(): void
+    {
+        [$source, $destination] = $this->createIncrementalPartitionLimitTables(
+            'DATE',
+            'PARTITION BY `part`',
+            "DATE_ADD(DATE '2000-01-01', INTERVAL n DAY)",
+            BigqueryImportOptions::USING_TYPES_USER,
+            [],
+            [],
+            10001,
+        );
+
+        try {
+            (new IncrementalImporter($this->bqClient))->importToTable(
+                $source,
+                $destination,
+                new BigqueryImportOptions(isIncremental: true, usingTypes: BigqueryImportOptions::USING_TYPES_USER),
+                new ImportState($source->getTableName()),
+            );
+            self::fail('The import must fail on the table partition limit.');
+        } catch (BigqueryInputDataException $e) {
+            self::assertStringContainsString('The load holds 10001 partitions', $e->getMessage());
+            self::assertStringContainsString('Partition the table by MONTH instead of DAY.', $e->getMessage());
+        }
+
+        $rows = $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'SELECT `id`, `value` FROM %s.`split_dest` ORDER BY `id`',
+            BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+        )));
+        self::assertSame(
+            [
+                ['id' => 'old-1', 'value' => 'old'],
+                ['id' => 'row-0', 'value' => 'old'],
+            ],
+            iterator_to_array($rows->getIterator(), false),
+        );
+    }
+
+    public function testIncrementalLoadTakingTableOverPartitionLimitFails(): void
+    {
+        $destinationSchema = BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName());
+        $sourceSchema = BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName());
+        $valueExpression = "DATE_ADD(DATE '2000-01-01', INTERVAL n DAY)";
+
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s.`split_dest` (`id` STRING NOT NULL, `part` DATE, `value` STRING) PARTITION BY `part`',
+            $destinationSchema,
+        )));
+        // one statement can create at most 4,000 partitions
+        foreach ([[0, 3999], [4000, 7999], [8000, 9499]] as [$from, $to]) {
+            $this->bqClient->runQuery($this->bqClient->query(sprintf(
+                'INSERT INTO %s.`split_dest` (`id`, `part`, `value`) '
+                    . "SELECT CONCAT('old-', CAST(n AS STRING)), %s, 'old' "
+                    . 'FROM UNNEST(GENERATE_ARRAY(%d, %d)) AS n',
+                $destinationSchema,
+                $valueExpression,
+                $from,
+                $to,
+            )));
+        }
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'CREATE TABLE %s.`split_source` (`id` STRING, `part` DATE, `value` STRING)',
+            $sourceSchema,
+        )));
+        $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'INSERT INTO %s.`split_source` (`id`, `part`, `value`) '
+                . "SELECT CONCAT('row-', CAST(n AS STRING)), %s, 'new' "
+                . 'FROM UNNEST(GENERATE_ARRAY(9500, 10499)) AS n',
+            $sourceSchema,
+            $valueExpression,
+        )));
+
+        /** @var BigqueryTableDefinition $destination */
+        $destination = (new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getDestinationDbName(),
+            'split_dest',
+        ))->getTableDefinition();
+        $destination = $this->cloneDefinitionWithDedupCol($destination, []);
+        /** @var BigqueryTableDefinition $source */
+        $source = (new BigqueryTableReflection(
+            $this->bqClient,
+            $this->getSourceDbName(),
+            'split_source',
+        ))->getTableDefinition();
+
+        try {
+            (new IncrementalImporter($this->bqClient))->importToTable(
+                $source,
+                $destination,
+                new BigqueryImportOptions(isIncremental: true, usingTypes: BigqueryImportOptions::USING_TYPES_USER),
+                new ImportState($source->getTableName()),
+            );
+            self::fail('The import must fail on the table partition limit.');
+        } catch (BigqueryInputDataException $e) {
+            self::assertStringContainsString('exceeding limit 10000', $e->getMessage());
+            self::assertStringContainsString('Use coarser partitioning', $e->getMessage());
+        }
+
+        $row = (array) $this->bqClient->runQuery($this->bqClient->query(
+            sprintf('SELECT COUNT(*) AS `count` FROM %s.`split_dest`', $destinationSchema),
+        ))->getIterator()->current();
+        assert(is_int($row['count']) || is_string($row['count']));
+        self::assertSame(9500, (int) $row['count']);
+    }
+
     /**
      * @param BigqueryImportOptions::USING_TYPES_* $usingTypes
      * @param string[] $primaryKeys
@@ -241,6 +348,7 @@ class IncrementalImportTest extends BigqueryBaseTestCase
         string $usingTypes,
         array $primaryKeys,
         array $extraSourceValues,
+        int $sourcePartitions = 5000,
     ): array {
         $destinationSchema = BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName());
         $sourceSchema = BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName());
@@ -267,10 +375,11 @@ class IncrementalImportTest extends BigqueryBaseTestCase
         $this->bqClient->runQuery($this->bqClient->query(sprintf(
             'INSERT INTO %s.`split_source` (`id`, `part`, `value`) '
                 . "SELECT CONCAT('row-', CAST(n AS STRING)), CAST(%s AS %s), 'new' "
-                . 'FROM UNNEST(GENERATE_ARRAY(0, 4999)) AS n',
+                . 'FROM UNNEST(GENERATE_ARRAY(0, %d)) AS n',
             $sourceSchema,
             $valueExpression,
             $sourceType,
+            $sourcePartitions - 1,
         )));
         foreach ($extraSourceValues as $index => $value) {
             $this->bqClient->runQuery($this->bqClient->query(sprintf(

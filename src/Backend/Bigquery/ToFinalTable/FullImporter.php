@@ -173,6 +173,9 @@ final class FullImporter implements ToFinalTableImporterInterface
         if ($ranges === null) {
             return false;
         }
+        if ($ranges->partitionCount > BigqueryImportOptions::MAX_PARTITIONS_PER_TABLE) {
+            throw BigqueryException::createTablePartitionLimitException($ranges->partitionCount, $ranges->column);
+        }
         // The limit is per statement, so ranged inserts in one transaction keep the load atomic.
         $this->loadIntoTruncatedTable(
             $sourceTableDefinition,

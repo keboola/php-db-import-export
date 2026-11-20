@@ -13,6 +13,8 @@ class BigqueryImportOptions extends ImportOptions
 {
     // BigQuery rejects a statement that modifies more than 4,000 partitions.
     public const MAX_PARTITIONS_PER_STATEMENT = 4000;
+    // BigQuery allows at most 10,000 partitions in one table.
+    public const MAX_PARTITIONS_PER_TABLE = 10000;
     public const PARTITION_AWARE_IMPORT_MAX_VALUES_LIMIT = self::MAX_PARTITIONS_PER_STATEMENT;
 
     private ?Session $session;

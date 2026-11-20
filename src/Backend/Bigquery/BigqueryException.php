@@ -7,6 +7,8 @@ namespace Keboola\Db\ImportExport\Backend\Bigquery;
 use Google\Cloud\BigQuery\Exception\JobException;
 use Google\Cloud\Core\Exception\ServiceException;
 use Keboola\Db\Import\Exception;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionAwareImportColumn;
+use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\PartitionRangeColumn;
 use Throwable;
 
 class BigqueryException extends Exception
@@ -18,6 +20,10 @@ class BigqueryException extends Exception
 
     private const TOO_MANY_PARTITIONS_MESSAGE = 'A single load touches too many partitions of the destination '
         . 'table. Use coarser partitioning (e.g. by month), a different partition column, or split the load.';
+
+    private const TABLE_PARTITION_LIMIT_MESSAGE = 'The load would take the destination table over the BigQuery '
+        . 'limit of partitions per table. Use coarser partitioning (e.g. by month instead of by day) or a larger '
+        . 'range interval.';
 
     public static function covertException(JobException|ServiceException $e): Throwable
     {
@@ -31,6 +37,13 @@ class BigqueryException extends Exception
             // customer can drop `_timestamp` in their own GCP project; any other missing column is our bug
             if (preg_match('/Column `?_timestamp`? is not present in table/', $e->getMessage()) === 1) {
                 return new BigqueryInputDataException(self::extractErrorMessage($e->getMessage()), 0, $e);
+            }
+            if (self::isTablePartitionLimitError($e->getMessage())) {
+                return new BigqueryInputDataException(
+                    self::extractErrorMessage($e->getMessage()) . ' ' . self::TABLE_PARTITION_LIMIT_MESSAGE,
+                    0,
+                    $e,
+                );
             }
             if (self::isResourcesExceededError($e->getMessage())) {
                 return new BigqueryResourcesExceededException(
@@ -97,6 +110,17 @@ class BigqueryException extends Exception
             );
         }
 
+        foreach ([$errorMessage, ...array_column($jobErrors, 'message')] as $message) {
+            if (self::isTablePartitionLimitError($message)) {
+                return new BigqueryInputDataException(sprintf(
+                    '%s %s For more information check job "%s" in Google Cloud Console.',
+                    $message,
+                    self::TABLE_PARTITION_LIMIT_MESSAGE,
+                    $jobInfo['jobReference']['jobId'],
+                ));
+            }
+        }
+
         // last resort: the per-row parse errors above are more actionable, so they keep precedence
         foreach ($jobErrors as $error) {
             if (self::isResourcesExceededError($error['message'])
@@ -127,6 +151,26 @@ class BigqueryException extends Exception
         return new self($errorMessage);
     }
 
+    public static function createTablePartitionLimitException(
+        int $partitionCount,
+        PartitionRangeColumn $column,
+    ): BigqueryInputDataException {
+        $advice = match ($column->granularity) {
+            PartitionAwareImportColumn::GRANULARITY_HOUR => 'Partition the table by DAY instead of HOUR.',
+            PartitionAwareImportColumn::GRANULARITY_DAY => 'Partition the table by MONTH instead of DAY.',
+            PartitionAwareImportColumn::GRANULARITY_MONTH => 'Partition the table by YEAR instead of MONTH.',
+            PartitionAwareImportColumn::GRANULARITY_YEAR => 'Use a different partition column.',
+            null => sprintf('Use a range interval larger than %d.', $column->rangeInterval),
+        };
+
+        return new BigqueryInputDataException(sprintf(
+            'The load holds %d partitions, BigQuery allows %d partitions in one table. %s',
+            $partitionCount,
+            BigqueryImportOptions::MAX_PARTITIONS_PER_TABLE,
+            $advice,
+        ));
+    }
+
     /**
      * ServiceException carries the raw JSON response body, the human sentence is in `error.message`.
      */
@@ -153,6 +197,11 @@ class BigqueryException extends Exception
     public static function isTooManyPartitionsError(string $message): bool
     {
         return str_contains($message, 'Too many partitions produced by query');
+    }
+
+    public static function isTablePartitionLimitError(string $message): bool
+    {
+        return preg_match('/will have \d+ partitions when the job finishes, exceeding limit \d+/', $message) === 1;
     }
 
     private static function isUserError(string $message, string $reason): bool

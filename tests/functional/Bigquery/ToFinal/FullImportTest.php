@@ -7,6 +7,7 @@ namespace Tests\Keboola\Db\ImportExportFunctional\Bigquery\ToFinal;
 use Generator;
 use Keboola\CsvOptions\CsvOptions;
 use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryImportOptions;
+use Keboola\Db\ImportExport\Backend\Bigquery\BigqueryInputDataException;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\FullImporter;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToFinalTable\SqlBuilder;
 use Keboola\Db\ImportExport\Backend\Bigquery\ToStage\StageTableDefinitionFactory;
@@ -196,6 +197,44 @@ class FullImportTest extends BigqueryBaseTestCase
         );
     }
 
+    public function testFullLoadOverTablePartitionLimitFails(): void
+    {
+        [$source, $destination] = $this->createPartitionLimitTables(
+            'DATE',
+            'PARTITION BY `part`',
+            "DATE_ADD(DATE '2000-01-01', INTERVAL n DAY)",
+            BigqueryImportOptions::USING_TYPES_USER,
+            [],
+            [],
+            10001,
+        );
+
+        try {
+            (new FullImporter($this->bqClient))->importToTable(
+                $source,
+                $destination,
+                new BigqueryImportOptions(usingTypes: BigqueryImportOptions::USING_TYPES_USER),
+                new ImportState($source->getTableName()),
+            );
+            self::fail('The import must fail on the table partition limit.');
+        } catch (BigqueryInputDataException $e) {
+            self::assertStringContainsString('The load holds 10001 partitions', $e->getMessage());
+            self::assertStringContainsString('Partition the table by MONTH instead of DAY.', $e->getMessage());
+        }
+
+        $rows = $this->bqClient->runQuery($this->bqClient->query(sprintf(
+            'SELECT `id`, `value` FROM %s.`split_dest` ORDER BY `id`',
+            BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName()),
+        )));
+        self::assertSame(
+            [
+                ['id' => 'old-1', 'value' => 'old'],
+                ['id' => 'old-2', 'value' => 'old'],
+            ],
+            iterator_to_array($rows->getIterator(), false),
+        );
+    }
+
     /**
      * @param BigqueryImportOptions::USING_TYPES_* $usingTypes
      * @param string[] $primaryKeys
@@ -209,6 +248,7 @@ class FullImportTest extends BigqueryBaseTestCase
         string $usingTypes,
         array $primaryKeys,
         array $extraSourceValues,
+        int $sourcePartitions = 5000,
     ): array {
         $destinationSchema = BigqueryQuote::quoteSingleIdentifier($this->getDestinationDbName());
         $sourceSchema = BigqueryQuote::quoteSingleIdentifier($this->getSourceDbName());
@@ -235,10 +275,11 @@ class FullImportTest extends BigqueryBaseTestCase
         $this->bqClient->runQuery($this->bqClient->query(sprintf(
             'INSERT INTO %s.`split_source` (`id`, `part`, `value`) '
                 . "SELECT CONCAT('row-', CAST(n AS STRING)), CAST(%s AS %s), 'new' "
-                . 'FROM UNNEST(GENERATE_ARRAY(0, 4999)) AS n',
+                . 'FROM UNNEST(GENERATE_ARRAY(0, %d)) AS n',
             $sourceSchema,
             $valueExpression,
             $sourceType,
+            $sourcePartitions - 1,
         )));
         foreach ($extraSourceValues as $index => $value) {
             $this->bqClient->runQuery($this->bqClient->query(sprintf(
