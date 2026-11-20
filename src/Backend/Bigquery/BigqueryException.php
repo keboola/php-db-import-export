@@ -22,8 +22,8 @@ class BigqueryException extends Exception
         . 'table. Use coarser partitioning (e.g. by month), a different partition column, or split the load.';
 
     private const TABLE_PARTITION_LIMIT_MESSAGE = 'The load would take the destination table over the BigQuery '
-        . 'limit of partitions per table. Use coarser partitioning (e.g. by month instead of by day) or a larger '
-        . 'range interval.';
+        . 'limit of partitions per table. Use a coarser partitioning (for example by month instead of by day, or '
+        . 'by year instead of by month), or a larger range interval.';
 
     public static function covertException(JobException|ServiceException $e): Throwable
     {

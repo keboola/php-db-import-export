@@ -351,7 +351,7 @@ class IncrementalImportTest extends BigqueryBaseTestCase
             self::fail('The import must fail on the table partition limit.');
         } catch (BigqueryInputDataException $e) {
             self::assertStringContainsString('exceeding limit 10000', $e->getMessage());
-            self::assertStringContainsString('Use coarser partitioning', $e->getMessage());
+            self::assertStringContainsString('Use a coarser partitioning', $e->getMessage());
         }
 
         $row = (array) $this->bqClient->runQuery($this->bqClient->query(

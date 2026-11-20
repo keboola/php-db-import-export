@@ -974,7 +974,7 @@ class BigqueryExceptionTest extends TestCase
                 self::assertInstanceOf(BigqueryInputDataException::class, $e);
                 self::assertNotInstanceOf(BigqueryResourcesExceededException::class, $e);
                 self::assertStringContainsString('will have 10500 partitions', $e->getMessage());
-                self::assertStringContainsString('Use coarser partitioning', $e->getMessage());
+                self::assertStringContainsString('Use a coarser partitioning', $e->getMessage());
                 self::assertStringContainsString(
                     'check job "eb64d133-213d-4e99-9cc0-4e37d0c18de9"',
                     $e->getMessage(),
@@ -1006,7 +1006,7 @@ class BigqueryExceptionTest extends TestCase
         self::assertInstanceOf(BigqueryInputDataException::class, $e);
         self::assertNotInstanceOf(BigqueryResourcesExceededException::class, $e);
         self::assertStringContainsString('will have 10500 partitions', $e->getMessage());
-        self::assertStringContainsString('Use coarser partitioning', $e->getMessage());
+        self::assertStringContainsString('Use a coarser partitioning', $e->getMessage());
     }
 
     /**
