@@ -279,7 +279,8 @@ final class IncrementalImporter implements ToFinalTableImporterInterface
             $partitionAwareImportFilter,
             $sourceCondition,
         );
-        // ranges bound the source partitions; a MERGE that moves rows out of other destination partitions can still exceed the limit
+        // ranges bound the source partitions; a MERGE that moves rows out of other destination partitions
+        // can still exceed the limit
         $retryInRanges = fn(string $message): bool => $this->retryInPartitionRanges(
             $message,
             $deduplicationTableDefinition,
